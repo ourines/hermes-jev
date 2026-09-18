@@ -74,6 +74,28 @@ class CLITests(unittest.TestCase):
         service.run({'state': 'Outage', 'preset': 'task_triage'})
         self.assertEqual(requests[-1]['gateway_id'], 'hermes-jev')
 
+    def test_openrouter_setup_uses_a_dedicated_slot_and_no_account_id(self):
+        cli = importlib.import_module('hermes_jev.cli')
+        from test_service import Context
+        from hermes_jev.service import Service
+        parser = argparse.ArgumentParser()
+        cli.build_parser(parser)
+        args = parser.parse_args(['setup', '--backend', 'openrouter'])
+        ctx, secrets, requests = Context(), {}, []
+        def evaluate(**kwargs):
+            requests.append(kwargs)
+            return {'model': 'fixture', 'answers': {}, 'usage': {}}
+        service = Service(ctx, evaluator=evaluate, secret_reader=secrets.get)
+        with patch.object(sys.stdin, 'isatty', return_value=True), patch.object(cli.getpass, 'getpass', return_value='fixture-secret'):
+            result = cli.setup(ctx, args, service=service, save_secret=secrets.__setitem__)
+        self.assertTrue(result['ok'])
+        self.assertEqual(ctx.settings['connection']['backend'], 'openrouter')
+        self.assertEqual(ctx.settings['connection']['account_id'], '')
+        self.assertEqual(list(secrets), ['OPENROUTER_JEV_API_TOKEN'])
+        self.assertEqual(requests[0]['backend'], 'openrouter')
+        self.assertEqual(requests[0]['model'], 'typesafe/jev-1.13')
+        self.assertNotIn('fixture-secret', str(result))
+
     def test_invalid_gateway_is_rejected_before_any_secret_or_request(self):
         cli = importlib.import_module('hermes_jev.cli')
         from test_service import Context

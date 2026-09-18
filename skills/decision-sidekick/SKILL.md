@@ -26,7 +26,7 @@ When the user says “测试 Jev” or asks about the Jev plugin, inspect local 
 A plugin-namespaced skill is explicitly loaded, not automatically listed in `available_skills`. The optional ordinary companion at `skills/jev/SKILL.md` supplies first-turn discovery when installed into the active profile. It is never installed implicitly on plugin import.
 
 ## Setup and quick start
-Use `terminal(command="hermes jev status")`. If unconfigured, launch `terminal(command="hermes jev setup", background=True, pty=True, notify=True)` and let the user enter credentials directly in the terminal. Never accept tokens in chat or pass them on the command line. Choose TypeSafe or Cloudflare explicitly; never silently fail over across providers.
+Use `terminal(command="hermes jev status")`. If unconfigured, launch `terminal(command="hermes jev setup", background=True, pty=True, notify=True)` and let the user enter credentials directly in the terminal. Never accept tokens in chat or pass them on the command line. Choose TypeSafe, Cloudflare or OpenRouter explicitly; never silently fail over across providers.
 
 Use `terminal(command="hermes jev test")` for a small billed smoke call. No live result means no claim that the model works.
 

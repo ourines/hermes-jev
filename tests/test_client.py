@@ -60,11 +60,31 @@ class ClientTests(unittest.TestCase):
         with self.transport(lambda request: httpx.Response(200, json={'result': {'result': RESPONSE}})):
             with self.assertRaises(client.JevError):
                 self.evaluate(backend='typesafe')
+            with self.assertRaises(client.JevError):
+                self.evaluate(backend='openrouter')
+
+    def test_openrouter_endpoint_payload_and_version_pinned_default_model(self):
+        import client
+        seen = []
+        def handler(request):
+            seen.append(request)
+            return httpx.Response(200, json=RESPONSE)
+        with self.transport(handler):
+            result = self.evaluate(backend='openrouter')
+        self.assertEqual(str(seen[0].url), 'https://openrouter.ai/api/alpha/decisions')
+        self.assertEqual(json.loads(seen[0].content), {
+            'model': 'typesafe/jev-1.13', 'state': 'Help', 'questions': QUESTIONS})
+        self.assertEqual(result['answers'], RESPONSE['answers'])
+        with self.transport(handler):
+            self.evaluate(backend='openrouter', model='typesafe/jev-1.13-20260917')
+        payload = json.loads(seen[-1].content)
+        self.assertEqual(payload['model'], 'typesafe/jev-1.13-20260917')
+        self.assertNotIn('input', payload)
 
     def test_gateway_routing_and_privacy_headers_are_cloudflare_only(self):
         import client
         for backend, gateway in (("cloudflare", "hermes-jev"), ("cloudflare", "_"), ("cloudflare", None),
-                                 ("cloudflare", "a_0-" + "b" * 60), ("typesafe", None)):
+                                 ("cloudflare", "a_0-" + "b" * 60), ("typesafe", None), ("openrouter", None)):
             seen = []
             def handler(request):
                 seen.append(request)
@@ -86,7 +106,8 @@ class ClientTests(unittest.TestCase):
         import client
         invalid = ["", " ", "Upper", "a--b", "-a", "a-", "a/b", "a.b", "a\nb", "a\n", "a\r\nb",
                    "a" * 65, "中文", True, 1, [], {}]
-        cases = [("cloudflare", value) for value in invalid] + [("typesafe", "hermes-jev"), ("typesafe", "")]
+        cases = [("cloudflare", value) for value in invalid] + [("typesafe", "hermes-jev"), ("typesafe", ""),
+                                                                ("openrouter", "hermes-jev")]
         for backend, value in cases:
             with self.subTest(backend=backend, value=value), patch.object(client, "_post") as post:
                 with self.assertRaises(client.JevError) as raised:
@@ -152,7 +173,8 @@ class ClientTests(unittest.TestCase):
 
     def test_provider_codes_are_cloudflare_only_and_unknown_codes_have_no_hint(self):
         import client
-        for backend, code, expected in (('typesafe', 2049, None), ('cloudflare', 1000, 1000)):
+        for backend, code, expected in (('typesafe', 2049, None), ('cloudflare', 1000, 1000),
+                                        ('openrouter', 2049, None)):
             with self.transport(lambda request: httpx.Response(403, json={'errors': [{'code': code}]})):
                 with self.assertRaises(client.JevError) as raised:
                     self.evaluate(backend=backend, account_id='a' * 32)

@@ -1,6 +1,6 @@
 name: jev
 version: 0.1.2
-description: Explicit Jev decisions via TypeSafe or Cloudflare, with a shared agent tool and CLI.
+description: Explicit Jev decisions via TypeSafe, Cloudflare or OpenRouter, with a shared agent tool and CLI.
 manifest_version: 1
 license: MIT
 author: Ourines
@@ -13,7 +13,7 @@ config_schema:
   connection:
     type: dict
     default: {}
-    description: Selected backend, model, Cloudflare account ID and request timeout; no secrets.
+    description: Selected backend, model, provider routing identifiers and request timeout; no secrets.
   review_threshold:
     type: float
     description: Optional opt-in review heuristic; unset disables threshold gating. Not an authorization threshold.

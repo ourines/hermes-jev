@@ -1,6 +1,6 @@
 # Hermes Jev 决策副手
 
-通用 Hermes 工具插件，同时支持 TypeSafe 官方和 Cloudflare。不是聊天 Provider，不替换主模型。
+通用 Hermes 工具插件，同时支持 TypeSafe 官方、Cloudflare 和 OpenRouter。不是聊天 Provider，不替换主模型。
 
 **v0.1.2 为预发布版。Cloudflare 已完成真实中文基础烟测，返回模型 `jev-1.13.0`；TypeSafe 官方直连及真实业务准确率尚未验证。**
 
@@ -22,6 +22,7 @@
 hermes plugins enable jev --no-allow-tool-override
 hermes jev setup --backend cloudflare
 # 官方直连改为：hermes jev setup --backend typesafe
+# OpenRouter 改为：hermes jev setup --backend openrouter
 hermes jev status
 hermes jev test
 ```
@@ -57,6 +58,14 @@ hermes jev setup --backend cloudflare --account-id 你的账户ID --gateway-id �
 ```
 
 建议使用独立网关，不要直接改动其他应用共用的默认网关。插件不会创建网关、充值或打开自动充值。HTTP 403、Cloudflare 错误码 2049 应先检查目标网关认证；不要盲目更换 Key。
+
+## OpenRouter 的说明
+
+```sh
+hermes jev setup --backend openrouter
+```
+
+OpenRouter 提供的请求/应答契约与官方一致，但走的是 **alpha** 端点，且不存在 `jev-latest` 别名（会返回 `HTTP 400 Model typesafe/jev-latest does not exist`），因此该后端默认固定版本号模型 `typesafe/jev-1.13`，可用 `--model` 覆盖。凭据为独立槽位 `OPENROUTER_JEV_API_TOKEN`：建议单独建一把带额度限制的 Key，不要复用通用 OpenRouter Key。
 
 ## 不做什么
 
