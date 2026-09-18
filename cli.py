@@ -19,9 +19,9 @@ def setup(ctx, args, *, service=None, save_secret=None):
     if not sys.stdin.isatty():
         raise ValueError('Setup needs an interactive terminal; no credentials were read.')
     service = service or Service(ctx)
-    backend = args.backend or input('Backend [typesafe/cloudflare]: ').strip()
+    backend = args.backend or input(f"Backend [{'/'.join(sorted(SECRET_NAMES))}]: ").strip()
     if backend not in SECRET_NAMES:
-        raise ValueError('Choose typesafe or cloudflare.')
+        raise ValueError(f"Choose one of: {', '.join(sorted(SECRET_NAMES))}.")
     gateway_id = getattr(args, 'gateway_id', None)
     validate_gateway_id(backend, gateway_id)
     account = ''
