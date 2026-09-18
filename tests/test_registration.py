@@ -10,6 +10,14 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class RegistrationTests(unittest.TestCase):
+    def test_manifest_is_compatible_with_hermes_021_installer(self):
+        import re
+        # Runtime doctor accepts v2, but the 0.21.3 installer caps at v1.
+        manifest = (ROOT / 'plugin.yaml').read_text()
+        version = re.search(r'^manifest_version: (\d+)$', manifest, re.MULTILINE)
+        self.assertIsNotNone(version)
+        self.assertLessEqual(int(version.group(1)), 1)
+
     def test_tool_cli_and_skill_register_without_network_or_secret(self):
         self.assertTrue((ROOT / '__init__.py').exists(), 'Plugin entrypoint missing')
         spec = importlib.util.spec_from_file_location('jev_plugin_test', ROOT / '__init__.py', submodule_search_locations=[str(ROOT)])

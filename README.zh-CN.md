@@ -2,7 +2,7 @@
 
 通用 Hermes 工具插件，同时支持 TypeSafe 官方和 Cloudflare。不是聊天 Provider，不替换主模型。
 
-**v0.1.0 为预发布版；尚未完成真实 API 连通性与业务准确率验证。**
+**v0.1.1 为预发布版；尚未完成真实 API 连通性与业务准确率验证。**
 
 [官方 skill 整理与集成说明](docs/official-skill-notes.zh-CN.md)
 

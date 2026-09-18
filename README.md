@@ -2,7 +2,7 @@
 
 A native **tool plugin**, not a chat-model provider. Jev supplies bounded semantic judgments; the main Hermes agent keeps planning, generation, tool execution and responsibility for approvals.
 
-**v0.1.0 is a prerelease. Real TypeSafe/Cloudflare API access and workload accuracy have not yet been verified.**
+**v0.1.1 is a prerelease. Real TypeSafe/Cloudflare API access and workload accuracy have not yet been verified.**
 
 [中文使用说明](README.zh-CN.md) · [官方 skill 整理与集成说明](docs/official-skill-notes.zh-CN.md)
 
