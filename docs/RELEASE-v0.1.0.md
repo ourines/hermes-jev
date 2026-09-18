@@ -14,12 +14,12 @@ A community Hermes tool plugin supporting TypeSafe official and Cloudflare Jev. 
 ## Install
 
 ```sh
-hermes plugins install ourines/hermes-jev --ref v0.1.0 --enable
+hermes plugins install ourines/hermes-jev --ref f443b88220af2b65c5853ebd153f1c98bbf350c2 --enable
 hermes jev setup --backend typesafe
 # Or: hermes jev setup --backend cloudflare
 ```
 
-Use the full commit SHA shown on this release for stricter pinning. This is a custom-source plugin, not an entry in the official Hermes catalog. Review the source before enabling it. Setup makes one small billed request before saving credentials. Never send API keys in chat.
+Hermes `--ref` accepts only a full 40-character commit SHA, not a tag name. The initial source-archive release draft used a tag; use the corrected installation command on this release page. This is a custom-source plugin, not an entry in the official Hermes catalog. Review the source before enabling it. Setup makes one small billed request before saving credentials. Never send API keys in chat.
 
 ## Verified locally
 
