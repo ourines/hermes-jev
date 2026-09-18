@@ -2,7 +2,7 @@
 
 A native **tool plugin**, not a chat-model provider. Jev supplies bounded semantic judgments; the main Hermes agent keeps planning, generation, tool execution and responsibility for approvals.
 
-**v0.1.1 is a prerelease. Real TypeSafe/Cloudflare API access and workload accuracy have not yet been verified.**
+**v0.1.2 is a prerelease. Real TypeSafe/Cloudflare API access and workload accuracy have not yet been verified.**
 
 [中文使用说明](README.zh-CN.md) · [官方 skill 整理与集成说明](docs/official-skill-notes.zh-CN.md)
 
@@ -59,6 +59,26 @@ hermes jev evaluate --file examples/task-triage.json
 ```
 
 Use a new Hermes session after enabling so its tool catalog includes `jev_evaluate`; the existing conversation is not hot-mutated. CLI commands work in fresh processes without restarting the desktop. Credentials may require a new session/backend refresh depending on the host's secret-scope snapshot. Do not restart active work just for tool discovery.
+
+## Cloudflare third-party model prerequisites
+
+`typesafe/jev` is a third-party model routed through **AI Gateway**, not an `@cf/` hosted model. An active Workers AI token and readable model catalog do not prove Unified Billing can execute it.
+
+1. Use an authenticated AI Gateway and sufficient Unified Billing credits (or separately supported provider credentials). Prefer a dedicated gateway; enabling authentication on a shared default gateway may affect existing applications.
+2. The `/accounts/{account_id}/ai/run` route uses a Cloudflare API token with **Workers AI Read** in the standard `Authorization` header. Do not replace it with a token holding only AI Gateway permissions. Gateway-management permissions are separate. See current Cloudflare docs if the authentication-token template asks for additional Run permissions.
+3. Configure the gateway explicitly:
+
+```sh
+hermes jev setup --backend cloudflare --account-id YOUR_ACCOUNT_ID --gateway-id YOUR_GATEWAY_ID
+```
+
+This stores `gateway_id` as a nonsecret connection setting. Omitting it retains Cloudflare's default route; the plugin never creates a gateway, changes its authentication settings, purchases credits or enables auto-top-up.
+
+Cloudflare requests disable gateway log collection and cache use and cap gateway attempts to one via explicit headers. Also review your gateway's own settings and any upstream retention policy; these headers are not a claim of end-to-end zero data retention.
+
+A **403 / provider code 2049** means Unified Billing needs authenticated gateway access. Check the target gateway's authentication first; do not repeatedly regenerate a token or assume the model is unavailable. A user-token verification success can coexist with account-token verification failure because they are different token classes.
+
+Sources: [REST API](https://developers.cloudflare.com/ai-gateway/usage/rest-api/), [Authenticated Gateway](https://developers.cloudflare.com/ai-gateway/configuration/authentication/), [Unified Billing](https://developers.cloudflare.com/ai-gateway/features/unified-billing/).
 
 ## Agent interface
 

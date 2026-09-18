@@ -2,7 +2,7 @@
 
 通用 Hermes 工具插件，同时支持 TypeSafe 官方和 Cloudflare。不是聊天 Provider，不替换主模型。
 
-**v0.1.1 为预发布版；尚未完成真实 API 连通性与业务准确率验证。**
+**v0.1.2 为预发布版；尚未完成真实 API 连通性与业务准确率验证。**
 
 [官方 skill 整理与集成说明](docs/official-skill-notes.zh-CN.md)
 
@@ -35,6 +35,16 @@ hermes jev test
 ```
 
 输出保留答案、概率/置信度、用量和延迟，并给出需要复核的问题。所有结果均为建议，`execution_authorized` 永远为 `false`。
+
+## Cloudflare 的额外前提
+
+`typesafe/jev` 是经 AI Gateway 路由的第三方模型。Token 有效和能读取 Workers AI 模型列表，不等于可以进行统一计费推理。需要启用认证的目标网关和足够的 Unified Billing 余额。
+
+```sh
+hermes jev setup --backend cloudflare --account-id 你的账户ID --gateway-id 你的网关ID
+```
+
+建议使用独立网关，不要直接改动其他应用共用的默认网关。插件不会创建网关、充值或打开自动充值。HTTP 403、Cloudflare 错误码 2049 应先检查目标网关认证；不要盲目更换 Key。
 
 ## 不做什么
 

@@ -46,6 +46,10 @@ Exactly one of `preset` and `questions` is required. A custom question's meaning
 4. Read `answers` and uncertainty in context. Threshold review is off by default; `review.review_policy_enabled` says whether an operator enabled it. Configured thresholds are NOT calibrated accuracy. Low confidence can reflect several acceptable options: apply consequence-aware policy, not a universal gate. Ignore unused speculative branches.
 5. Treat every result as advisory. `execution_authorized` is always false. Even confident outputs never replace user permission, tests, access controls or deterministic risk checks.
 
+## Cloudflare gateway prerequisite
+
+For `typesafe/jev`, check authenticated AI Gateway access and Unified Billing credits, not just Workers AI token validity. Configure a dedicated gateway with `hermes jev setup --backend cloudflare --gateway-id <id>` through an interactive terminal. Error 403/code 2049 signals gateway authentication required for Unified Billing. Do not modify a shared gateway, buy credits, or broaden token permissions without approval. `/ai/run` uses standard Authorization; do not copy provider-native gateway headers blindly.
+
 ## Pitfalls
 - Noul has a probability of yes, not a separate confidence score. A low value can be a strong no.
 - Choice/Score confidence is a distribution-derived statistic, not guaranteed correctness.

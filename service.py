@@ -1,5 +1,6 @@
 """Hermes-facing runtime; resolve settings and secrets on every call."""
 from .presets import assess, questions_for
+from .client import safe_error_details, validate_gateway_id
 
 SECRET_NAMES = {'typesafe': 'TYPESAFE_API_KEY', 'cloudflare': 'CLOUDFLARE_JEV_API_TOKEN'}
 MODELS = {'typesafe': 'jev-latest', 'cloudflare': 'typesafe/jev'}
@@ -23,37 +24,42 @@ class Service:
             from .client import evaluate
             evaluator = evaluate
         backend = connection['backend']
+        validate_gateway_id(backend, connection.get('gateway_id'))
+        routing = {'gateway_id': connection['gateway_id']} if connection.get('gateway_id') is not None else {}
         return evaluator(backend=backend, token=token, state=state, questions=questions,
                          account_id=connection.get('account_id', ''),
                          model=connection.get('model') or MODELS[backend],
-                         timeout=connection.get('timeout', 30))
+                         timeout=connection.get('timeout', 30), **routing)
 
     def status(self):
         connection = self.ctx.get_config('connection', {})
         backend = connection.get('backend')
+        validate_gateway_id(backend, connection.get('gateway_id'))
         try:
             present = bool(self.secret(SECRET_NAMES[backend])) if backend in SECRET_NAMES else False
         except Exception:
             present = False
         return {'backend': backend, 'model': connection.get('model') or MODELS.get(backend),
                 'account_id': connection.get('account_id', ''), 'credential_present': present,
+                'gateway_id': connection.get('gateway_id'),
                 'configured': backend in SECRET_NAMES and present,
                 'online_verified': False, 'advisory_only': True}
 
     def run(self, args):
         try:
             return self._run(args)
-        except Exception:
+        except Exception as exc:
             # Never echo arbitrary exceptions, request bodies or headers.
-            return {'ok': False, 'error': 'evaluation_failed',
-                    'message': 'Invalid request, configuration, or evaluation failure. Run hermes jev test for diagnosis.',
-                    'execution_authorized': False}
+            return {'message': 'Invalid request, configuration, or evaluation failure. Run hermes jev test for diagnosis.',
+                    **safe_error_details(exc), 'ok': False, 'error': 'evaluation_failed',
+                    'advisory_only': True, 'execution_authorized': False}
 
     def _run(self, args):
         if not isinstance(args, dict):
             raise ValueError('Expected object')
         connection = self.ctx.get_config('connection', {})
         backend = connection.get('backend')
+        validate_gateway_id(backend, connection.get('gateway_id'))
         if backend not in SECRET_NAMES:
             return {'ok': False, 'error': 'not_configured', 'message': 'Run hermes jev setup in an interactive terminal.', 'execution_authorized': False}
         threshold = self.ctx.get_config('review_threshold', None)

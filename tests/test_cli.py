@@ -13,6 +13,92 @@ sys.modules.setdefault('hermes_jev', package)
 
 
 class CLITests(unittest.TestCase):
+    def test_gateway_setup_persists_routes_and_reports_nonsecret_id(self):
+        cli = importlib.import_module('hermes_jev.cli')
+        from test_service import Context
+        from hermes_jev.service import Service
+        parser = argparse.ArgumentParser()
+        cli.build_parser(parser)
+        args = parser.parse_args(['setup', '--backend', 'cloudflare', '--account-id', 'a' * 32,
+                                  '--gateway-id', 'hermes-jev'])
+        ctx, secrets, requests = Context(), {}, []
+        def evaluate(**kwargs):
+            requests.append(kwargs)
+            return {'model': 'fixture', 'answers': {}, 'usage': {}}
+        service = Service(ctx, evaluator=evaluate, secret_reader=secrets.get)
+        with patch.object(sys.stdin, 'isatty', return_value=True), patch.object(cli.getpass, 'getpass', return_value='fixture-secret'):
+            cli.setup(ctx, args, service=service, save_secret=secrets.__setitem__)
+        self.assertEqual(ctx.settings['connection']['gateway_id'], 'hermes-jev')
+        self.assertEqual(requests[0]['gateway_id'], 'hermes-jev')
+        self.assertEqual(service.status()['gateway_id'], 'hermes-jev')
+        service.run({'state': 'Outage', 'preset': 'task_triage'})
+        self.assertEqual(requests[-1]['gateway_id'], 'hermes-jev')
+
+    def test_invalid_gateway_is_rejected_before_any_secret_or_request(self):
+        cli = importlib.import_module('hermes_jev.cli')
+        from test_service import Context
+        from hermes_jev.service import Service
+        from hermes_jev.client import JevError
+        from unittest.mock import Mock
+        for backend, gateway in (('cloudflare', ''), ('cloudflare', 'bad/id'), ('typesafe', 'hermes-jev')):
+            with self.subTest(backend=backend, gateway=gateway):
+                ctx = Context()
+                ctx.settings['connection'] = {'backend': backend, 'gateway_id': gateway, 'account_id': 'a' * 32}
+                reader, evaluator, saver = Mock(), Mock(), Mock()
+                service = Service(ctx, evaluator=evaluator, secret_reader=reader)
+                args = argparse.Namespace(backend=backend, gateway_id=gateway, account_id='a' * 32, model=None)
+                with patch.object(sys.stdin, 'isatty', return_value=True), patch.object(cli.getpass, 'getpass') as hidden:
+                    with self.assertRaises(JevError):
+                        cli.setup(ctx, args, service=service, save_secret=saver)
+                    hidden.assert_not_called()
+                self.assertFalse(service.run({'state': 'Outage', 'preset': 'task_triage'})['ok'])
+                with self.assertRaises(JevError):
+                    cli.smoke_test(service)
+                with self.assertRaises(JevError):
+                    service.status()
+                reader.assert_not_called()
+                evaluator.assert_not_called()
+                saver.assert_not_called()
+
+    def test_cli_and_tool_errors_expose_only_controlled_diagnostics(self):
+        import contextlib
+        import io
+        import json
+        from hermes_jev.client import JevError
+        from hermes_jev.service import Service
+        from test_service import Context
+        cli = importlib.import_module('hermes_jev.cli')
+        class UnsafeError(JevError):
+            def __str__(self):
+                return 'fixture-secret private-input'
+        for error in (JevError('HTTP', status_code=403, provider_code=2049),
+                      UnsafeError('HTTP', status_code=403, provider_code=2049),
+                      RuntimeError('fixture-secret private-input')):
+            error.hint = 'fixture-secret private-input'
+            ctx = Context()
+            ctx.settings['connection'] = {'backend': 'cloudflare', 'gateway_id': 'hermes-jev'}
+            def failing(**kwargs):
+                raise error
+            service = Service(ctx, evaluator=failing, secret_reader=lambda name: 'fixture-secret')
+            tool = service.run({'state': 'Outage', 'preset': 'task_triage'})
+            output = io.StringIO()
+            with patch.object(cli, 'Service', return_value=service), contextlib.redirect_stdout(output):
+                with self.assertRaises(SystemExit) as raised:
+                    cli.dispatch(ctx, argparse.Namespace(jev_command='test'))
+            self.assertEqual(raised.exception.code, 1)
+            for result in (tool, json.loads(output.getvalue())):
+                with self.subTest(error=type(error).__name__, result=result):
+                    self.assertFalse(result['ok'])
+                    self.assertIs(result['execution_authorized'], False)
+                    self.assertNotIn('fixture-secret', str(result))
+                    self.assertNotIn('private-input', str(result))
+                    if isinstance(error, JevError):
+                        self.assertEqual(result.get('provider_code'), 2049)
+                        self.assertEqual(result.get('status_code'), 403)
+                        self.assertIn('Unified Billing', result.get('hint', ''))
+                    else:
+                        self.assertNotIn('provider_code', result)
+
     def test_smoke_status_and_controls_cannot_be_overridden_by_provider(self):
         cli = importlib.import_module('hermes_jev.cli')
         from test_service import Context

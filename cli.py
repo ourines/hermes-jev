@@ -5,6 +5,7 @@ import sys
 import warnings
 
 from .service import MODELS, SECRET_NAMES, Service
+from .client import safe_error_details, validate_gateway_id
 
 SMOKE = {
     'state': '线上网站发生故障，所有用户无法登录，请立即修复。',
@@ -21,12 +22,16 @@ def setup(ctx, args, *, service=None, save_secret=None):
     backend = args.backend or input('Backend [typesafe/cloudflare]: ').strip()
     if backend not in SECRET_NAMES:
         raise ValueError('Choose typesafe or cloudflare.')
+    gateway_id = getattr(args, 'gateway_id', None)
+    validate_gateway_id(backend, gateway_id)
     account = ''
     if backend == 'cloudflare':
         account = args.account_id or input('Cloudflare Account ID: ').strip()
         if not re.fullmatch(r'[a-fA-F0-9]{32}', account):
             raise ValueError('Account ID must be exactly 32 hexadecimal characters.')
     connection = {'backend': backend, 'model': args.model or MODELS[backend], 'account_id': account, 'timeout': 30}
+    if backend == 'cloudflare' and gateway_id is not None:
+        connection['gateway_id'] = gateway_id
     print('One small live Jev request will be sent to the selected provider; usage may be billed.', flush=True)
     with warnings.catch_warnings():
         warnings.simplefilter('error', getpass.GetPassWarning)
@@ -54,6 +59,7 @@ def build_parser(parser):
     config = subs.add_parser('setup', help='Interactive hidden credential entry and one live validation')
     config.add_argument('--backend', choices=sorted(SECRET_NAMES))
     config.add_argument('--account-id', help='Non-secret Cloudflare account ID')
+    config.add_argument('--gateway-id', help='Non-secret Cloudflare AI Gateway ID')
     config.add_argument('--model', help='Optional model ID; default depends on backend')
     subs.add_parser('status', help='Local configuration presence, never prints keys')
     subs.add_parser('test', help='One billed Chinese smoke call covering all three primitives')
@@ -72,6 +78,7 @@ def smoke_test(service):
     }
     connection = service.ctx.get_config('connection', {})
     backend = connection.get('backend')
+    validate_gateway_id(backend, connection.get('gateway_id'))
     if backend not in SECRET_NAMES or not service.secret(SECRET_NAMES[backend]):
         return {'ok': False, 'error': 'not_configured', 'message': 'Run hermes jev setup.'}
     result = service.request(connection, service.secret(SECRET_NAMES[backend]), SMOKE['state'], questions)
@@ -106,9 +113,9 @@ def dispatch(ctx, args):
         print('Cancelled; no further action taken.')
         raise SystemExit(130)
     except Exception as exc:
-        from .client import JevError
-        message = str(exc) if isinstance(exc, JevError) else 'Setup or command failed. Check terminal input and plugin configuration; sensitive details are suppressed.'
-        result = {'ok': False, 'error': 'command_failed', 'message': message}
+        result = {'message': 'Setup or command failed. Check terminal input and plugin configuration; sensitive details are suppressed.',
+                  **safe_error_details(exc), 'ok': False, 'error': 'command_failed',
+                  'advisory_only': True, 'execution_authorized': False}
     print(json.dumps(result, ensure_ascii=False, indent=2))
     if result.get('ok') is False:
         raise SystemExit(1)

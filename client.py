@@ -19,6 +19,7 @@ import httpx
 MAX_QUESTIONS = 128
 MAX_PAYLOAD_BYTES = 1024 * 1024
 MAX_RESPONSE_BYTES = 2 * 1024 * 1024
+MAX_ERROR_BYTES = 64 * 1024
 
 
 class JevError(Exception):
@@ -30,10 +31,10 @@ class JevError(Exception):
     a guarantee that a billed inference did not already execute.
     """
 
-    def __init__(self, category="request", *, status_code=None, retryable=False):
+    def __init__(self, category="request", *, status_code=None, retryable=False, provider_code=None):
         categories = (
             "request", "HTTP", "timeout", "network", "provider", "invalid_json",
-            "invalid_backend", "invalid_token", "invalid_account_id", "invalid_model",
+            "invalid_backend", "invalid_token", "invalid_account_id", "invalid_model", "invalid_gateway_id",
             "invalid_timeout", "invalid_state", "invalid_questions", "invalid_payload",
             "invalid_response", "payload_too_large", "response_too_large",
         )
@@ -42,10 +43,30 @@ class JevError(Exception):
         self.category = category
         self.status_code = status_code
         self.retryable = retryable is True
+        self.provider_code = (provider_code if type(provider_code) is int and
+                              0 <= provider_code <= 999_999_999 else None)
+        self.hint = ("Enable authentication on the target Cloudflare AI Gateway for Unified Billing; "
+                     "configure its gateway_id and use a permitted Cloudflare API token."
+                     if self.provider_code == 2049 else None)
         message = f"Jev {category} error"
         if status_code is not None:
             message += f" ({status_code})"
         super().__init__(message)
+
+
+def safe_error_details(error):
+    """Allowlisted diagnostics, reconstructed instead of formatting exceptions."""
+    if not isinstance(error, JevError):
+        return {}
+    safe = JevError(error.category, status_code=error.status_code,
+                    retryable=error.retryable, provider_code=error.provider_code)
+    details = {"message": str(safe), "category": safe.category,
+               "status_code": safe.status_code, "retryable": safe.retryable}
+    if safe.provider_code is not None:
+        details["provider_code"] = safe.provider_code
+    if safe.hint is not None:
+        details["hint"] = safe.hint
+    return details
 
 
 def _invalid_constant(_value):
@@ -61,18 +82,59 @@ def _unique_object(pairs):
     return result
 
 
-def _post(url, token, payload, timeout):
-    """Internal HTTP seam for transport fixtures; not an endpoint override API."""
+def _provider_code(data):
+    """Extract only a bounded integer; never retain provider text."""
+    errors = data.get("errors") if type(data) is dict else None
+    if type(errors) is list:
+        for error in errors:
+            code = error.get("code") if type(error) is dict else None
+            if type(code) is int and 0 <= code <= 999_999_999:
+                return code
+    return None
+
+
+def _http_provider_code(response):
     body = bytearray()
     try:
+        for chunk in response.iter_bytes(chunk_size=4096):
+            if len(body) + len(chunk) > MAX_ERROR_BYTES:
+                return None
+            body.extend(chunk)
+        return _provider_code(json.loads(body, parse_constant=_invalid_constant,
+                                         object_pairs_hook=_unique_object))
+    except (ValueError, RecursionError, httpx.HTTPError, OSError):
+        return None
+
+
+def validate_gateway_id(backend, gateway_id):
+    """Validate non-secret routing before credential access or HTTP requests."""
+    if gateway_id is not None and (
+        backend != "cloudflare" or type(gateway_id) is not str or
+        not 1 <= len(gateway_id) <= 64 or
+        not re.fullmatch(r"[a-z0-9_]+(?:-[a-z0-9_]+)*", gateway_id)
+    ):
+        raise JevError("invalid_gateway_id")
+
+
+def _post(url, token, payload, timeout, *, gateway_id=None):
+    """Internal HTTP seam for transport fixtures; not an endpoint override API."""
+    body = bytearray()
+    cloudflare = bool(re.fullmatch(r"https://api\.cloudflare\.com/client/v4/accounts/[0-9a-fA-F]{32}/ai/run", url))
+    validate_gateway_id("cloudflare" if cloudflare else "typesafe", gateway_id)
+    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json",
+               "Accept": "application/json", "Accept-Encoding": "identity"}
+    if cloudflare:
+        headers.update({"cf-aig-collect-log": "false", "cf-aig-skip-cache": "true",
+                        "cf-aig-max-attempts": "1"})
+        if gateway_id is not None:
+            headers["cf-aig-gateway-id"] = gateway_id
+    try:
         with httpx.Client(follow_redirects=False, timeout=timeout, trust_env=False) as http:
-            with http.stream("POST", url, headers={
-                "Authorization": f"Bearer {token}", "Content-Type": "application/json",
-                "Accept": "application/json", "Accept-Encoding": "identity",
-            }, content=_encode_payload(payload)) as response:
+            with http.stream("POST", url, headers=headers, content=_encode_payload(payload)) as response:
                 if not 200 <= response.status_code < 300:
                     status = response.status_code
-                    raise JevError("HTTP", status_code=status, retryable=status == 429 or status >= 500)
+                    raise JevError("HTTP", status_code=status, retryable=status == 429 or status >= 500,
+                                   provider_code=_http_provider_code(response) if cloudflare else None)
                 length = response.headers.get("Content-Length", "")
                 if length.isascii() and length.isdigit() and (len(length) > 10 or int(length) > MAX_RESPONSE_BYTES):
                     raise JevError("response_too_large")
@@ -200,12 +262,16 @@ def _validate_response(result, questions):
 
 
 def evaluate(*, backend: str, token: str, state, questions: dict,
-             account_id: str = "", model: str | None = None, timeout: float = 30) -> dict:
+             account_id: str = "", model: str | None = None, timeout: float = 30,
+             gateway_id: str | None = None) -> dict:
     """Evaluate once; retain model/answers/usage and append local metadata.
 
     backend: exactly 'typesafe' or 'cloudflare'. Cloudflare requires a 32-hex
     account_id. Defaults: jev-latest / typesafe/jev, respectively. Model override
     changes only the JSON model identifier, never the fixed endpoint.
+    gateway_id is optional, Cloudflare-only, and must be 1..64 lowercase
+    alphanumeric/underscore characters with single interior hyphens. Cloudflare
+    requests disable gateway logging/caching and permit only one attempt.
 
     Limits: 1..128 questions; Choice 2..255 options; Score >=2 string levels;
     JSON depth <=64; UTF-8 request <=1 MiB; decoded response <=2 MiB.
@@ -214,11 +280,14 @@ def evaluate(*, backend: str, token: str, state, questions: dict,
     Noul has no confidence. Optional Choice/Score probabilities and confidence
     are validated when present, never fabricated. Probability sum tolerance is
     0.01 for rounding. Missing requested answers always fail closed.
-    Raises JevError with only static categories/status, no provider error body.
+    Raises JevError with static categories/status and a bounded numeric provider
+    code/static hint where available, never provider error text. HTTP error
+    diagnostics parse at most 64 KiB; malformed/oversized bodies stay generic.
     """
     started = time.monotonic()
     if backend not in ("typesafe", "cloudflare"):
         raise JevError("invalid_backend")
+    validate_gateway_id(backend, gateway_id)
     if not isinstance(token, str) or not re.fullmatch(r"[!-~]{1,8192}", token):
         raise JevError("invalid_token")
     if backend == "cloudflare" and (
@@ -242,11 +311,12 @@ def evaluate(*, backend: str, token: str, state, questions: dict,
         url = "https://api.typesafe.ai/v1/systemone"
         payload = {"model": model or "jev-latest", "state": state, "questions": questions}
     _encode_payload(payload)
-    result = _post(url, token, payload, timeout)
+    result = (_post(url, token, payload, timeout) if gateway_id is None else
+              _post(url, token, payload, timeout, gateway_id=gateway_id))
     if not isinstance(result, dict):
         raise JevError("invalid_response")
     if backend == "cloudflare" and result.get("success") is False:
-        raise JevError("provider")
+        raise JevError("provider", provider_code=_provider_code(result))
     if backend == "cloudflare" and "result" in result:
         result = result["result"]
     _validate_response(result, questions)

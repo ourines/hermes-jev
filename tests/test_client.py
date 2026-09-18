@@ -29,6 +29,108 @@ class ClientTests(unittest.TestCase):
         arguments.update(changes)
         return client.evaluate(**arguments)
 
+    def test_gateway_routing_and_privacy_headers_are_cloudflare_only(self):
+        import client
+        for backend, gateway in (("cloudflare", "hermes-jev"), ("cloudflare", "_"), ("cloudflare", None),
+                                 ("cloudflare", "a_0-" + "b" * 60), ("typesafe", None)):
+            seen = []
+            def handler(request):
+                seen.append(request)
+                return httpx.Response(200, json=RESPONSE)
+            with self.subTest(backend=backend, gateway=gateway), self.transport(handler):
+                self.evaluate(backend=backend, account_id="a" * 32, gateway_id=gateway)
+            headers = seen[0].headers
+            self.assertEqual(headers["Authorization"], "Bearer fixture-token")
+            self.assertNotIn("cf-aig-authorization", headers)
+            self.assertEqual(headers.get("cf-aig-gateway-id"), gateway)
+            controls = {"cf-aig-collect-log": "false", "cf-aig-skip-cache": "true",
+                        "cf-aig-max-attempts": "1"}
+            for key, value in controls.items():
+                self.assertEqual(headers.get(key), value if backend == "cloudflare" else None)
+            if backend == "cloudflare":
+                self.assertEqual(str(seen[0].url), "https://api.cloudflare.com/client/v4/accounts/" + "a" * 32 + "/ai/run")
+
+    def test_gateway_validation_rejects_invalid_or_non_cloudflare_before_post(self):
+        import client
+        invalid = ["", " ", "Upper", "a--b", "-a", "a-", "a/b", "a.b", "a\nb", "a\n", "a\r\nb",
+                   "a" * 65, "中文", True, 1, [], {}]
+        cases = [("cloudflare", value) for value in invalid] + [("typesafe", "hermes-jev"), ("typesafe", "")]
+        for backend, value in cases:
+            with self.subTest(backend=backend, value=value), patch.object(client, "_post") as post:
+                with self.assertRaises(client.JevError) as raised:
+                    self.evaluate(backend=backend, account_id="a" * 32, gateway_id=value)
+                self.assertEqual(raised.exception.category, "invalid_gateway_id")
+                post.assert_not_called()
+
+    def test_cloudflare_2049_has_safe_numeric_diagnostics_without_raw_body(self):
+        import client
+        import traceback
+        body = {'success': False, 'errors': [{'code': 2049, 'message': 'fixture-token private-input'}],
+                'hint': 'private-input', 'execution_authorized': True}
+        for status in (403, 200):
+            seen = []
+            def handler(request):
+                seen.append(request)
+                return httpx.Response(status, json=body, headers={'X-Secret': 'fixture-token'})
+            with self.subTest(status=status), self.transport(handler):
+                with self.assertRaises(client.JevError) as raised:
+                    self.evaluate(backend='cloudflare', account_id='a' * 32)
+            error = raised.exception
+            self.assertEqual(str(error), 'Jev HTTP error (403)' if status == 403 else 'Jev provider error')
+            self.assertEqual(getattr(error, 'provider_code', None), 2049)
+            self.assertIn('Unified Billing', error.hint)
+            self.assertIn('authentication', error.hint)
+            self.assertNotIn('fixture-token', str(vars(error)))
+            self.assertNotIn('private-input', ''.join(traceback.format_exception(error)))
+            self.assertEqual(len(seen), 1)
+
+    def test_error_diagnostics_are_bounded_and_malformed_bodies_stay_generic(self):
+        import client
+        import traceback
+        malformed = [b'private-input', b'\xff', b'[' * 1100 + b']' * 1100,
+                     b'{"errors":[{"code":2049,"code":1000}]}',
+                     b'{"errors":[{"code":NaN}]}']
+        malformed += [json.dumps({'errors': [{'code': code, 'message': 'private-input'}]}).encode()
+                      for code in (True, '2049', 2049.0, -1, 1_000_000_000, None, {}, [])]
+        for raw in malformed:
+            with self.subTest(raw=raw[:80]), self.transport(lambda request: httpx.Response(403, content=raw)):
+                with self.assertRaises(client.JevError) as raised:
+                    self.evaluate(backend='cloudflare', account_id='a' * 32)
+            self.assertEqual(str(raised.exception), 'Jev HTTP error (403)')
+            self.assertIsNone(raised.exception.provider_code)
+            self.assertIsNone(raised.exception.hint)
+            self.assertNotIn('private-input', ''.join(traceback.format_exception(raised.exception)))
+        class ErrorStream(httpx.SyncByteStream):
+            reads = 0
+            closed = False
+            def __iter__(self):
+                for _ in range(100):
+                    self.reads += 1
+                    yield b' ' * 4096
+            def close(self):
+                self.closed = True
+        stream = ErrorStream()
+        with self.transport(lambda request: httpx.Response(403, stream=stream)):
+            with self.assertRaises(client.JevError) as raised:
+                self.evaluate(backend='cloudflare', account_id='a' * 32)
+        self.assertEqual(raised.exception.status_code, 403)
+        self.assertIsNone(raised.exception.provider_code)
+        self.assertLessEqual(stream.reads, 17)
+        self.assertTrue(stream.closed)
+
+    def test_provider_codes_are_cloudflare_only_and_unknown_codes_have_no_hint(self):
+        import client
+        for backend, code, expected in (('typesafe', 2049, None), ('cloudflare', 1000, 1000)):
+            with self.transport(lambda request: httpx.Response(403, json={'errors': [{'code': code}]})):
+                with self.assertRaises(client.JevError) as raised:
+                    self.evaluate(backend=backend, account_id='a' * 32)
+            self.assertEqual(raised.exception.provider_code, expected)
+            self.assertIsNone(raised.exception.hint)
+        for code in (True, 'private-input', -1, 1_000_000_000):
+            error = client.JevError('HTTP', status_code=403, provider_code=code)
+            self.assertIsNone(error.provider_code)
+            self.assertNotIn('private-input', str(client.safe_error_details(error)))
+
     def test_http_errors_are_safe_and_never_retry_or_follow_redirects(self):
         import client
         self.assertTrue(hasattr(client, "JevError"), "safe public error is required")

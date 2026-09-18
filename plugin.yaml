@@ -1,5 +1,5 @@
 name: jev
-version: 0.1.1
+version: 0.1.2
 description: Explicit Jev decisions via TypeSafe or Cloudflare, with a shared agent tool and CLI.
 manifest_version: 1
 license: MIT
