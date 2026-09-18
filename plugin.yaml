@@ -1,0 +1,19 @@
+name: jev
+version: 0.1.0
+description: Explicit Jev decisions via TypeSafe or Cloudflare, with a shared agent tool and CLI.
+manifest_version: 2
+license: MIT
+author: Ourines
+python_dependencies:
+  - "httpx>=0.28,<0.29"
+provides_tools:
+  - jev_evaluate
+provides_hooks: []
+config_schema:
+  connection:
+    type: dict
+    default: {}
+    description: Selected backend, model, Cloudflare account ID and request timeout; no secrets.
+  review_threshold:
+    type: float
+    description: Optional opt-in review heuristic; unset disables threshold gating. Not an authorization threshold.

@@ -1,0 +1,12 @@
+{
+  "state": "用户请求退还重复扣款。",
+  "questions": {
+    "route": {
+      "type": "choice",
+      "instructions": "Which queue should handle this request?",
+      "criteria": {"billing":"Payments and refunds","technical":"Bugs and outages","unknown":"Insufficient information"}
+    },
+    "urgent": {"type":"noul","instructions":"Is an immediate service outage described?"},
+    "frustration": {"type":"score","instructions":"Rate the expressed frustration.","criteria":["Calm","Frustrated","Very angry"]}
+  }
+}
