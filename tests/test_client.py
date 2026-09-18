@@ -29,6 +29,38 @@ class ClientTests(unittest.TestCase):
         arguments.update(changes)
         return client.evaluate(**arguments)
 
+    def test_cloudflare_double_result_envelope_from_live_shape(self):
+        # Synthetic values; envelope shape observed in the local live probe.
+        import client
+        wrapped = {'success': True, 'errors': [], 'result': {
+            'success': True, 'errors': [], 'result': {
+                **RESPONSE, 'execution_authorized': True, 'ok': False}}}
+        with self.transport(lambda request: httpx.Response(200, json=wrapped)):
+            result = self.evaluate(backend='cloudflare', account_id='a' * 32)
+        self.assertEqual(result['answers'], RESPONSE['answers'])
+        self.assertEqual(result['usage'], RESPONSE['usage'])
+        self.assertNotIn('execution_authorized', result)
+        self.assertNotIn('ok', result)
+
+    def test_cloudflare_envelopes_remain_bounded_and_fail_closed(self):
+        import client
+        bad = [
+            {'result': {'success': False, 'errors': [{'code': 2049}], 'result': RESPONSE}},
+            {'result': {'result': {**RESPONSE, 'success': False}}},
+            {'result': {'result': {'result': RESPONSE}}},
+            {'result': {**RESPONSE, 'result': RESPONSE}},
+            {'result': None},
+            {'result': {'result': []}},
+            {'result': {'result': {**RESPONSE, 'answers': {}}}},
+        ]
+        for body in bad:
+            with self.subTest(body=body), self.transport(lambda request: httpx.Response(200, json=body)):
+                with self.assertRaises(client.JevError):
+                    self.evaluate(backend='cloudflare', account_id='a' * 32)
+        with self.transport(lambda request: httpx.Response(200, json={'result': {'result': RESPONSE}})):
+            with self.assertRaises(client.JevError):
+                self.evaluate(backend='typesafe')
+
     def test_gateway_routing_and_privacy_headers_are_cloudflare_only(self):
         import client
         for backend, gateway in (("cloudflare", "hermes-jev"), ("cloudflare", "_"), ("cloudflare", None),

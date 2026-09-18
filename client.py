@@ -315,10 +315,19 @@ def evaluate(*, backend: str, token: str, state, questions: dict,
               _post(url, token, payload, timeout, gateway_id=gateway_id))
     if not isinstance(result, dict):
         raise JevError("invalid_response")
-    if backend == "cloudflare" and result.get("success") is False:
-        raise JevError("provider", provider_code=_provider_code(result))
-    if backend == "cloudflare" and "result" in result:
-        result = result["result"]
+    if backend == "cloudflare":
+        # Live /ai/run may wrap the provider response in two result envelopes.
+        # Bound unwrapping and inspect failure flags at every layer.
+        for depth in range(3):
+            if not isinstance(result, dict):
+                raise JevError("invalid_response")
+            if result.get("success") is False:
+                raise JevError("provider", provider_code=_provider_code(result))
+            if "result" not in result:
+                break
+            if depth == 2 or any(key in result for key in ("answers", "model", "usage")):
+                raise JevError("invalid_response")
+            result = result["result"]
     _validate_response(result, questions)
     # Provider extensions must never become local status or authorization fields.
     return {"model": result["model"], "answers": result["answers"], "usage": result["usage"],
