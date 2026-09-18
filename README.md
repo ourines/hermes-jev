@@ -2,7 +2,7 @@
 
 A native **tool plugin**, not a chat-model provider. Jev supplies bounded semantic judgments; the main Hermes agent keeps planning, generation, tool execution and responsibility for approvals.
 
-**v0.1.2 is a prerelease. Real TypeSafe/Cloudflare API access and workload accuracy have not yet been verified.**
+**v0.1.2 is a prerelease. A live Cloudflare Chinese smoke test passed with `jev-1.13.0`; direct TypeSafe access and real-workload accuracy remain unverified.**
 
 [中文使用说明](README.zh-CN.md) · [官方 skill 整理与集成说明](docs/official-skill-notes.zh-CN.md)
 
@@ -58,7 +58,9 @@ hermes jev presets      # show shipped rubrics; offline
 hermes jev evaluate --file examples/task-triage.json
 ```
 
-Use a new Hermes session after enabling so its tool catalog includes `jev_evaluate`; the existing conversation is not hot-mutated. CLI commands work in fresh processes without restarting the desktop. Credentials may require a new session/backend refresh depending on the host's secret-scope snapshot. Do not restart active work just for tool discovery.
+Installation/enabling, live API access, and exposure in a desktop agent tool catalog are separate checks. Confirm `jev_evaluate` in the actual catalog before claiming native-tool readiness; opening a new chat does not guarantee a long-running backend reloads plugins. Use `hermes jev evaluate --file request.json` as the agent-operated fallback, without reinstalling or changing credentials. Do not interrupt active work by restarting the backend without approval.
+
+For first-turn discovery, install the ordinary companion skill from `skills/jev/SKILL.md` into the current profile using `skill_manage` (local name `jev`). Unlike plugin-namespaced skills, ordinary skills appear in the startup skill index. Installation is explicit; plugin loading never writes user skills. The companion handles “测试 Jev”, usage questions, task judgments and status-only requests, with native-tool/CLI fallback and billing boundaries. It does not run inference automatically. `hermes jev guide` is an offline onboarding command. `status` reports local configuration only; its legacy `online_verified: false` means no live check was performed, not that authentication failed.
 
 ## Cloudflare third-party model prerequisites
 

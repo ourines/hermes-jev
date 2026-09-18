@@ -17,6 +17,60 @@ class Context:
 
 
 class ServiceTests(unittest.TestCase):
+    def test_status_checks_names_only_and_never_claims_online_or_tool_visibility(self):
+        import types
+        from unittest.mock import Mock, patch
+        package = types.ModuleType('hermes_jev')
+        package.__path__ = [str(ROOT)]
+        sys.modules.setdefault('hermes_jev', package)
+        Service = __import__('hermes_jev.service', fromlist=['Service']).Service
+        key = 'TYPESAFE_API_KEY'
+
+        class NamesOnly(dict):
+            def get(self, *args):
+                raise AssertionError('must not read credential values')
+            def __getitem__(self, name):
+                raise AssertionError('must not read credential values')
+            def __contains__(self, name):
+                raise AssertionError('iterate names without mapping value access')
+
+        cases = [
+            ('typesafe', NamesOnly({key: object()}), NamesOnly(), True, True),
+            ('typesafe', NamesOnly(), NamesOnly({key: object()}), True, False),
+            ('typesafe', None, NamesOnly({key: object()}), True, False),
+            ('typesafe', None, NamesOnly({key: object()}), False, True),
+            ('typesafe', NamesOnly(), NamesOnly({key: object()}), False, True),
+            ('typesafe', NamesOnly(), NamesOnly(), False, False),
+            (None, NamesOnly({key: object()}), NamesOnly(), False, False),
+        ]
+        for backend, scope, environ, multiplex, present in cases:
+            with self.subTest(backend=backend, scoped=scope is not None, multiplex=multiplex, present=present):
+                ctx = Context()
+                ctx.settings['connection'] = {'backend': backend}
+                reader = Mock(side_effect=AssertionError('no secret reader'))
+                evaluator = Mock(side_effect=AssertionError('no paid request'))
+                service = Service(ctx, evaluator=evaluator, secret_reader=reader)
+                scope_module = types.ModuleType('agent.secret_scope')
+                scope_module.current_secret_scope = lambda: scope
+                scope_module.is_multiplex_active = lambda: multiplex
+                with patch.dict(sys.modules, {'agent.secret_scope': scope_module}), \
+                        patch('os.environ', environ), \
+                        patch('socket.socket', side_effect=AssertionError('no network')):
+                    result = service.status()
+                self.assertIs(result['credential_present'], present)
+                self.assertIs(result['configured'], present)
+                self.assertIs(result['online_verified'], False)
+                self.assertEqual(result.get('verification_scope'), 'local_configuration_only')
+                self.assertEqual(result.get('online_verification'), 'not_checked')
+                self.assertEqual(result.get('agent_tool_visibility'), 'not_checked_in_this_cli_process')
+                self.assertIn('names_only', result.get('credential_presence_scope', ''))
+                self.assertIn('hermes jev test' if present else 'hermes jev setup', result.get('next_step', ''))
+                if present:
+                    self.assertIn('optional', result['next_step'])
+                    self.assertIn('billed', result['next_step'])
+                reader.assert_not_called()
+                evaluator.assert_not_called()
+
     def test_explicit_call_uses_scoped_connection_and_never_authorizes(self):
         self.assertTrue((ROOT / 'service.py').exists(), 'Service not implemented')
         import types

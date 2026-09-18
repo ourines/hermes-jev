@@ -51,7 +51,49 @@ def setup(ctx, args, *, service=None, save_secret=None):
         raise RuntimeError('Connection read-back failed.')
     return {'ok': True, 'backend': backend, 'model': result.get('model'),
             'latency_ms': result.get('latency_ms'), 'usage': result.get('usage', {}),
-            'credential_saved': True, 'connection_verified': True, 'main_model_changed': False}
+            'credential_saved': True, 'connection_verified': True, 'main_model_changed': False,
+            'next_step': 'Run hermes jev guide for free examples and skill usage. '
+                         'For an optional additional online smoke test, run hermes jev test (may be billed).',
+            'agent_tool_visibility': 'not_checked_in_this_cli_process',
+            'session_note': 'Existing sessions may need a plugin reload or a new session. '
+                            'A new session does not guarantee tool visibility; check its actual tool list. '
+                            'No restart was performed.',
+            'restart_performed': False, 'advisory_only': True, 'execution_authorized': False}
+
+
+def guide():
+    """Static onboarding only: no configuration, credential or provider access."""
+    return {
+        'what_it_does': 'Jev 是按需调用的决策助手：对有限问题做分类、真假判断、选项选择或评分；不替换主模型，不执行行动，也不授予权限。',
+        'presets': {
+            'task_triage': '任务分类，提示缺失上下文与需要审批的风险。',
+            'next_step': '结合目标、近期尝试和观察，建议继续、重试、换方法、询问、升级或停止。',
+            'relevance': '根据目标和待评估材料，判断材料的相关程度。',
+        },
+        'example_prompts': {
+            'task_triage': '请加载 jev:decision-sidekick，用 task_triage 评估“整理项目文档”，只给建议，不执行。',
+            'next_step': '请用 Jev next_step 评估：目标是修复测试；同一修改已重试两次，错误不变。建议下一步，不执行。',
+            'relevance': '请用 Jev relevance 评估：目标是排查登录失败；材料是一段已去除敏感信息的认证错误摘要。',
+        },
+        'billing': {
+            'free_commands': ['status', 'guide', 'presets'],
+            'paid_commands': ['setup', 'test', 'evaluate'],
+            'notice': 'status / guide / presets 仅在本地运行，不发 API 请求。setup 会发送一次在线验证；test / evaluate 会向所选提供商发请求，可能计费。仅发送最少必要且不含密钥的数据。',
+        },
+        'skill': {
+            'name': 'jev:decision-sidekick',
+            'invocation': '在 Hermes 对话中请求“请加载 jev:decision-sidekick”；助手可调用 skill_view(name="jev:decision-sidekick")。',
+        },
+        'native_tool_missing': {
+            'cli_fallback': 'hermes jev evaluate --file request.json',
+            'request_example': {'state': '整理项目文档', 'preset': 'task_triage'},
+            'note': '如果当前会话未暴露 jev_evaluate，可将请求 JSON 保存为 request.json 后使用 CLI（可能计费）。CLI 成功不证明桌面已暴露原生工具。',
+        },
+        'agent_tool_visibility': 'not_checked_in_this_cli_process',
+        'session_note': '现有会话可能需要重新加载插件或开启新会话；新会话也不保证工具可见，请检查该会话的实际工具列表。本命令不自动重启。',
+        'advisory_only': True,
+        'execution_authorized': False,
+    }
 
 
 def build_parser(parser):
@@ -62,6 +104,7 @@ def build_parser(parser):
     config.add_argument('--gateway-id', help='Non-secret Cloudflare AI Gateway ID')
     config.add_argument('--model', help='Optional model ID; default depends on backend')
     subs.add_parser('status', help='Local configuration presence, never prints keys')
+    subs.add_parser('guide', help='Free local onboarding, examples and billing boundaries; no API call')
     subs.add_parser('test', help='One billed Chinese smoke call covering all three primitives')
     subs.add_parser('presets', help='Print available decision rubrics, no API call')
     evaluation = subs.add_parser('evaluate', help='Evaluate a JSON request file (paid external request)')
@@ -106,7 +149,7 @@ def dispatch(ctx, args):
                 raise ValueError('Request file exceeds the 1 MiB local limit.')
             result = service.run(json.loads(data))
         else:
-            actions = {'status': service.status, 'presets': lambda: {'presets': PRESETS},
+            actions = {'status': service.status, 'guide': guide, 'presets': lambda: {'presets': PRESETS},
                        'test': lambda: smoke_test(service)}
             result = actions[args.jev_command]()
     except (KeyboardInterrupt, EOFError):

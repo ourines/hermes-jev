@@ -6,6 +6,19 @@ SECRET_NAMES = {'typesafe': 'TYPESAFE_API_KEY', 'cloudflare': 'CLOUDFLARE_JEV_AP
 MODELS = {'typesafe': 'jev-latest', 'cloudflare': 'typesafe/jev'}
 
 
+def credential_name_present(name):
+    """Check loaded names, never token values or .env files; fail closed on scope errors."""
+    import os
+    from agent.secret_scope import current_secret_scope, is_multiplex_active
+    scope = current_secret_scope()
+    if scope is not None and any(key == name for key in scope):
+        return True
+    if is_multiplex_active():
+        return False
+    # Iteration is deliberate: Mapping.__contains__ can read a value.
+    return any(key == name for key in os.environ)
+
+
 class Service:
     def __init__(self, ctx, evaluator=None, secret_reader=None):
         self.ctx = ctx
@@ -36,13 +49,25 @@ class Service:
         backend = connection.get('backend')
         validate_gateway_id(backend, connection.get('gateway_id'))
         try:
-            present = bool(self.secret(SECRET_NAMES[backend])) if backend in SECRET_NAMES else False
+            present = credential_name_present(SECRET_NAMES[backend]) if backend in SECRET_NAMES else False
         except Exception:
             present = False
+        configured = backend in SECRET_NAMES and present
         return {'backend': backend, 'model': connection.get('model') or MODELS.get(backend),
                 'account_id': connection.get('account_id', ''), 'credential_present': present,
                 'gateway_id': connection.get('gateway_id'),
-                'configured': backend in SECRET_NAMES and present,
+                'configured': configured,
+                'credential_presence_scope': 'loaded_names_only_not_token_validity',
+                'verification_scope': 'local_configuration_only',
+                'online_verification': 'not_checked',
+                'agent_tool_visibility': 'not_checked_in_this_cli_process',
+                'next_step': ('For an optional online check, run hermes jev test (may be billed); '
+                              'use hermes jev guide for free usage examples.' if configured else
+                              'Run hermes jev setup in an interactive terminal (live validation may be billed); '
+                              'use hermes jev guide for free guidance.'),
+                'status_note': 'Presence means a credential name is loaded, not that its value is nonempty or valid. '
+                               'No token values were read. online_verified=false means not checked here, '
+                               'not a failed online test. This CLI does not check desktop tool visibility.',
                 'online_verified': False, 'advisory_only': True}
 
     def run(self, args):

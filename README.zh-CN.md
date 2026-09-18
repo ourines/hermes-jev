@@ -2,7 +2,7 @@
 
 通用 Hermes 工具插件，同时支持 TypeSafe 官方和 Cloudflare。不是聊天 Provider，不替换主模型。
 
-**v0.1.2 为预发布版；尚未完成真实 API 连通性与业务准确率验证。**
+**v0.1.2 为预发布版。Cloudflare 已完成真实中文基础烟测，返回模型 `jev-1.13.0`；TypeSafe 官方直连及真实业务准确率尚未验证。**
 
 [官方 skill 整理与集成说明](docs/official-skill-notes.zh-CN.md)
 
@@ -28,7 +28,19 @@ hermes jev test
 
 配置在交互终端输入，Token 隐藏，不放命令参数，也不发聊天。验证成功后保存，主模型不变。配置和测试会发送少量请求，可能计费。
 
-启用后新会话可调用 `jev_evaluate`；当前会话可先用 `hermes jev evaluate --file examples/task-triage.json`。配套运行指南为 `jev:decision-sidekick`，另附原版官方 skill `jev:typesafe-ai`（MIT，固定上游提交与来源）。两者分别解决如何调用、如何设计判断。
+**安装成功不等于桌面会话已收到工具。** 确认实际工具目录中有 `jev_evaluate` 才视为原生入口就绪；新开对话不保证长驻后端刷新插件。工具不可见时，Agent 可直接通过 `hermes jev evaluate --file request.json` 调用，无需用户自己写命令，也无需重新配置 Token。不要为了加载工具擅自重启正在执行任务的后端。
+
+### 让 Agent 一开始就知道 Jev
+
+Hermes 的 `register_skill()` 注册的是显式加载的 namespaced Skill，**不会自动加入启动提示的 available_skills**。因此本仓库另提供普通发现 Skill：`skills/jev/SKILL.md`。用户可让 Agent 通过 `skill_manage` 将它安装到当前 Profile 的普通技能目录（本地名称 `jev`）；这是显式安装，不在插件加载时偷偷改动用户技能。
+
+普通 Skill 支持这些开场指令：
+- “测试 Jev” → 检查配置，再做一次明确告知计费的烟测。
+- “Jev 怎么用” → 免费说明，不发模型请求。
+- “用 Jev 判断这条任务，只给建议” → 优先工具，缺入口时用 CLI。
+- “只检查 Jev 状态，不计费” → 只查本地状态。
+
+`hermes jev guide` 是免费的入门指南。`status` 只验证本地配置，`online_verified: false` 表示该命令未做在线验证，不代表 Token 失效。配套详细指南为 `jev:decision-sidekick`；官方设计指南为 `jev:typesafe-ai`（MIT，固定上游来源）。
 
 ```json
 {"state":"线上服务白屏，需要先排查原因。","preset":"task_triage"}

@@ -13,6 +13,46 @@ sys.modules.setdefault('hermes_jev', package)
 
 
 class CLITests(unittest.TestCase):
+    def test_guide_is_static_free_json_without_secrets_or_network(self):
+        import contextlib
+        import io
+        import json
+        from unittest.mock import Mock
+        cli = importlib.import_module('hermes_jev.cli')
+        parser = argparse.ArgumentParser()
+        cli.build_parser(parser)
+        with contextlib.redirect_stderr(io.StringIO()):
+            try:
+                args = parser.parse_args(['guide'])
+            except SystemExit:
+                self.fail('guide must be a supported free CLI command')
+        output = io.StringIO()
+        ctx = Mock()
+        with patch.object(cli.Service, 'secret', side_effect=AssertionError('secret read')) as secret, \
+                patch.object(cli.Service, 'request', side_effect=AssertionError('paid request')) as request, \
+                patch('socket.socket', side_effect=AssertionError('network')) as network, \
+                contextlib.redirect_stdout(output):
+            cli.dispatch(ctx, args)
+        result = json.loads(output.getvalue())
+        self.assertTrue(result['what_it_does'])
+        self.assertEqual(set(result['presets']), {'task_triage', 'next_step', 'relevance'})
+        self.assertEqual(set(result['example_prompts']), set(result['presets']))
+        for prompt in result['example_prompts'].values():
+            self.assertRegex(prompt, r'[\u4e00-\u9fff]')
+        self.assertEqual(result['billing']['free_commands'], ['status', 'guide', 'presets'])
+        self.assertEqual(result['billing']['paid_commands'], ['setup', 'test', 'evaluate'])
+        self.assertTrue(result['billing']['notice'])
+        self.assertEqual(result['native_tool_missing']['cli_fallback'], 'hermes jev evaluate --file request.json')
+        self.assertIn('jev:decision-sidekick', result['skill']['invocation'])
+        self.assertEqual(result['agent_tool_visibility'], 'not_checked_in_this_cli_process')
+        self.assertIs(result['execution_authorized'], False)
+        self.assertIs(result['advisory_only'], True)
+        secret.assert_not_called()
+        request.assert_not_called()
+        network.assert_not_called()
+        ctx.assert_not_called()
+        self.assertEqual(ctx.mock_calls, [])
+
     def test_gateway_setup_persists_routes_and_reports_nonsecret_id(self):
         cli = importlib.import_module('hermes_jev.cli')
         from test_service import Context
@@ -155,6 +195,44 @@ class CLITests(unittest.TestCase):
         self.assertIs(result['semantic_checks']['urgent'], False)
         self.assertIs(result['advisory_only'], True)
         self.assertIs(result['execution_authorized'], False)
+
+    def test_setup_success_guidance_and_local_flags_ignore_provider_claims(self):
+        import contextlib
+        import io
+        from unittest.mock import Mock
+        cli = importlib.import_module('hermes_jev.cli')
+        from test_service import Context
+        from hermes_jev.service import Service
+        ctx, secrets = Context(), {}
+        remote = {'model': 'fixture', 'usage': {}, 'latency_ms': 1,
+                  'ok': False, 'credential_saved': False, 'connection_verified': False,
+                  'main_model_changed': True, 'restart_performed': True,
+                  'agent_tool_visibility': 'visible', 'next_step': 'restart now',
+                  'session_note': 'new sessions always work',
+                  'advisory_only': False, 'execution_authorized': True}
+        evaluator = Mock(return_value=remote)
+        service = Service(ctx, evaluator=evaluator, secret_reader=secrets.get)
+        args = argparse.Namespace(backend='typesafe', account_id=None, model=None)
+        with patch.object(sys.stdin, 'isatty', return_value=True), \
+                patch.object(cli.getpass, 'getpass', return_value='fixture-secret'), \
+                patch('subprocess.Popen', side_effect=AssertionError('must not restart')) as process, \
+                contextlib.redirect_stdout(io.StringIO()):
+            result = cli.setup(ctx, args, service=service, save_secret=secrets.__setitem__)
+        self.assertIn('hermes jev guide', result.get('next_step', ''))
+        self.assertIn('hermes jev test', result['next_step'])
+        self.assertIn('optional', result['next_step'])
+        self.assertIn('billed', result['next_step'])
+        self.assertIn('may', result.get('session_note', ''))
+        self.assertIn('reload', result['session_note'])
+        self.assertIn('not guarantee', result['session_note'])
+        for field, value in {'ok': True, 'credential_saved': True, 'connection_verified': True,
+                             'main_model_changed': False, 'restart_performed': False,
+                             'agent_tool_visibility': 'not_checked_in_this_cli_process',
+                             'advisory_only': True, 'execution_authorized': False}.items():
+            self.assertEqual(result.get(field), value, field)
+        self.assertNotIn('fixture-secret', str(result))
+        evaluator.assert_called_once()
+        process.assert_not_called()
 
     def test_setup_is_masked_validated_then_persisted(self):
         self.assertTrue((ROOT / 'cli.py').exists(), 'Interactive CLI not implemented')
