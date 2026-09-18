@@ -13,14 +13,14 @@ This is a community prerelease of **ourines/hermes-jev**, an explicit decision-s
 ## Installation
 
 ```sh
-hermes plugins install ourines/hermes-jev --ref v0.1.2 --enable
+hermes plugins install ourines/hermes-jev --enable
 hermes jev guide
 hermes jev setup --backend typesafe
 # Or use Cloudflare:
 # hermes jev setup --backend cloudflare --account-id YOUR_ACCOUNT_ID --gateway-id YOUR_GATEWAY_ID
 ```
 
-For immutable installation, replace `v0.1.2` with the full commit SHA resolved by the release tag. Setup takes hidden terminal input and makes one tiny potentially billed validation request before saving a credential. `guide`, `status` and `presets` do not call Jev.
+The repository shorthand above tracks the default branch. For immutable installation, add `--ref` followed by the full 40-character commit SHA resolved by the release tag; `--ref` does not accept a tag name. Setup takes hidden terminal input and makes one tiny potentially billed validation request before saving a credential. `guide`, `status` and `presets` do not call Jev.
 
 A long-running Hermes Desktop backend may need a full restart to discover a newly installed native plugin. Opening a new chat alone is not a guaranteed reload. Do not interrupt active work; the CLI remains a fallback.
 
