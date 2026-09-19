@@ -131,6 +131,27 @@ class RoutingTests(unittest.TestCase):
         self.assertEqual(rewritten['request']['model'], 'gpt-5.6-sol')
         self.assertEqual(ctx.state.get('pending_route'), {})
 
+    def test_passive_route_can_read_task_from_provider_request(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('jev_plugin_root_req', ROOT / '__init__.py')
+        plugin_root = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(plugin_root)
+        from hermes_jev.service import Service
+        catalog = {'provider': 'openai-codex', 'models': ['gpt-5.6-luna', 'gpt-5.6-sol']}
+        ctx = Context()
+        ctx.settings['connection'] = {'backend': 'typesafe'}
+        ctx.set_config('model_route_enabled', True)
+        service = Service(ctx, evaluator=lambda **kwargs: {
+            'model': 'jev-fixture', 'answers': {'model': {'choice': 'gpt-5.6-sol', 'confidence': 0.99}},
+        }, secret_reader=lambda name: 'fixture-secret', catalog_reader=lambda provider: catalog)
+        middleware = plugin_root._model_route_middleware(ctx, service)
+        rewritten = middleware(
+            {'model': 'gpt-5.6-luna', 'input': [{'role': 'user', 'content': 'complex multi-file architecture debugging'}]},
+            session_id='session-3', turn_id='turn-3', provider='openai-codex',
+        )
+        self.assertEqual(rewritten['request']['model'], 'gpt-5.6-sol')
+        self.assertEqual(ctx.state.get('last_auto_route')['selected_model'], 'gpt-5.6-sol')
+
     def test_low_or_missing_confidence_requires_review_without_guessing(self):
         from hermes_jev.service import Service
         ctx = Context()

@@ -37,25 +37,65 @@ def _rewrite_armed_request(ctx, request, kwargs):
     return {'request': rewritten, 'source': 'jev', 'reason': f"route:{runtime.get('route_id', 'selected')}"}
 
 
+def _task_from_request(request):
+    if not isinstance(request, dict):
+        return ''
+    messages = request.get('messages')
+    if isinstance(messages, list):
+        for item in reversed(messages):
+            if isinstance(item, dict) and item.get('role') == 'user':
+                text = _task_text(item.get('content'))
+                if text:
+                    return text
+    incoming = request.get('input')
+    if isinstance(incoming, str):
+        return incoming.strip()
+    if isinstance(incoming, list):
+        for item in reversed(incoming):
+            if isinstance(item, dict) and item.get('role') == 'user':
+                text = _task_text(item.get('content') or item.get('text'))
+                if text:
+                    return text
+    return ''
+
+
 def _model_route_middleware(ctx, service=None):
     """Rewrite the outgoing model after an explicit or passive Jev route."""
     def middleware(request, **kwargs):
         armed = _rewrite_armed_request(ctx, request, kwargs)
         if armed is not None:
             return armed
-        if service is None:
+        if service is None or not service.auto_route_enabled():
+            return None
+        session_id = kwargs.get('session_id')
+        turn_id = kwargs.get('turn_id') or ''
+        attempted = ctx.state.get('route_attempted', {})
+        if isinstance(attempted, dict) and attempted.get('session_id') == session_id and attempted.get('turn_id') == turn_id and turn_id:
             return None
         pending = ctx.state.get('pending_route', {})
-        session_id = kwargs.get('session_id')
-        if not isinstance(pending, dict) or pending.get('session_id') != session_id:
+        task = ''
+        if isinstance(pending, dict) and pending.get('session_id') == session_id:
+            task = pending.get('task') or ''
+            turn_id = turn_id or pending.get('turn_id') or ''
+        if not task:
+            task = _task_from_request(request)
+        if not task or not isinstance(session_id, str) or not session_id:
             return None
-        service.auto_route_turn(pending.get('task') or '', {
+        ctx.state.set('route_attempted', {'session_id': session_id, 'turn_id': turn_id})
+        result = service.auto_route_turn(task, {
             'session_id': session_id,
-            'turn_id': kwargs.get('turn_id') or pending.get('turn_id') or '',
+            'turn_id': turn_id,
             'provider': kwargs.get('provider') or '',
             'model': kwargs.get('model') or '',
         })
         ctx.state.set('pending_route', {})
+        ctx.state.set('last_auto_route', {
+            'ok': result.get('ok'),
+            'error': result.get('error'),
+            'selected_model': result.get('selected_model'),
+            'route_accepted': result.get('route_accepted'),
+            'applied': (result.get('model_control') or {}).get('applied'),
+        })
         return _rewrite_armed_request(ctx, request, kwargs)
     return middleware
 
@@ -71,6 +111,7 @@ def _clear_model_route(ctx, **kwargs):
         return None
     ctx.state.set('active_route', {})
     ctx.state.set('pending_route', {})
+    ctx.state.set('route_attempted', {})
     return None
 
 
