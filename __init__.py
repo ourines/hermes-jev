@@ -22,6 +22,19 @@ def _model_route_middleware(ctx):
     return middleware
 
 
+def _clear_model_route(ctx, **kwargs):
+    """Drop a route when its Hermes turn finishes; never leak it to a later turn."""
+    runtime = ctx.state.get('active_route', {})
+    if not isinstance(runtime, dict) or runtime.get('session_id') != kwargs.get('session_id'):
+        return None
+    saved_turn = runtime.get('turn_id')
+    current_turn = kwargs.get('turn_id')
+    if saved_turn and current_turn and saved_turn != current_turn:
+        return None
+    ctx.state.set('active_route', {})
+    return None
+
+
 def register(ctx):
     from .service import Service
     from .cli import build_parser, dispatch
@@ -66,6 +79,15 @@ def register(ctx):
 
     if hasattr(ctx, 'register_middleware'):
         ctx.register_middleware('llm_request', _model_route_middleware(ctx))
+    if hasattr(ctx, 'register_hook'):
+        def on_pre_llm_call(**kwargs):
+            service.auto_route_turn(kwargs.get('user_message') or '', {
+                key: kwargs.get(key) for key in ('session_id', 'turn_id', 'provider', 'model')
+                if kwargs.get(key) is not None
+            })
+            return None
+        ctx.register_hook('pre_llm_call', on_pre_llm_call)
+        ctx.register_hook('post_llm_call', lambda **kwargs: _clear_model_route(ctx, **kwargs))
     ctx.register_cli_command(name='jev', help='Configure and test the Jev decision sidekick',
                              setup_fn=build_parser, handler_fn=lambda args: dispatch(ctx, args))
     ctx.register_skill('decision-sidekick', Path(__file__).parent / 'skills' / 'decision-sidekick' / 'SKILL.md')

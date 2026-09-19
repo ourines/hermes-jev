@@ -1,6 +1,7 @@
 """Hermes-facing runtime; resolve settings and secrets on every call."""
 from .presets import assess, questions_for
 from .client import safe_error_details, validate_gateway_id
+from .discovery import candidates_from_models, read_hermes_runtime, truthy
 from .routing import route_questions, route_result, validate_candidates, validate_min_confidence
 
 SECRET_NAMES = {'typesafe': 'TYPESAFE_API_KEY', 'cloudflare': 'CLOUDFLARE_JEV_API_TOKEN'}
@@ -21,10 +22,11 @@ def credential_name_present(name):
 
 
 class Service:
-    def __init__(self, ctx, evaluator=None, secret_reader=None):
+    def __init__(self, ctx, evaluator=None, secret_reader=None, catalog_reader=None):
         self.ctx = ctx
         self.evaluator = evaluator
         self.secret_reader = secret_reader
+        self.catalog_reader = catalog_reader
 
     def secret(self, name):
         if self.secret_reader is not None:
@@ -88,14 +90,74 @@ class Service:
                     **safe_error_details(exc), 'ok': False, 'error': 'routing_failed',
                     'advisory_only': True, 'execution_authorized': False}
 
-    def routes(self):
-        """Show configured non-secret model profiles without contacting Jev."""
-        configured = self.ctx.get_config('model_routes', [])
-        candidates = validate_candidates(configured) if configured else []
-        threshold = validate_min_confidence(self.ctx.get_config('route_min_confidence', None))
-        return {'configured': bool(candidates), 'candidates': candidates,
-                'min_confidence': threshold, 'advisory_only': True,
+    def auto_route_enabled(self):
+        return truthy(self.ctx.get_config('model_route_enabled', False))
+
+    def set_auto_route(self, enabled):
+        value = bool(enabled)
+        self.ctx.set_config('model_route_enabled', value)
+        return {'ok': True, 'model_route_enabled': value, 'advisory_only': True,
                 'execution_authorized': False}
+
+    def resolve_candidates(self, raw=None, *, provider='', current_model=''):
+        """Prefer explicit plugin profiles; otherwise discover the current Hermes catalog."""
+        if raw is not None:
+            return validate_candidates(raw), 'configured'
+        configured = self.ctx.get_config('model_routes', [])
+        if configured:
+            return validate_candidates(configured), 'configured'
+        runtime = {'provider': provider, 'current_model': current_model, 'models': []}
+        if self.catalog_reader is not None:
+            runtime = self.catalog_reader(provider) or runtime
+        else:
+            runtime = read_hermes_runtime(provider)
+        discovered = candidates_from_models(
+            runtime.get('models') or [],
+            provider=runtime.get('provider') or provider,
+            current_model=current_model or runtime.get('current_model') or '',
+        )
+        return discovered, 'discovered'
+
+    def routes(self):
+        """Show configured or discovered non-secret model profiles without contacting Jev."""
+        runtime = read_hermes_runtime() if self.catalog_reader is None else (self.catalog_reader(None) or {})
+        candidates, source = self.resolve_candidates(
+            provider=runtime.get('provider') or '',
+            current_model=runtime.get('current_model') or '',
+        )
+        threshold = validate_min_confidence(self.ctx.get_config('route_min_confidence', None))
+        return {'configured': source == 'configured' and bool(candidates),
+                'model_route_enabled': self.auto_route_enabled(),
+                'source': source if candidates else 'none',
+                'provider': runtime.get('provider') or '',
+                'current_model': runtime.get('current_model') or '',
+                'candidates': candidates, 'min_confidence': threshold,
+                'advisory_only': True, 'execution_authorized': False}
+
+    def auto_route_turn(self, task, runtime=None):
+        """Passive per-turn routing. Fail open: never raise into the Hermes loop."""
+        try:
+            if not self.auto_route_enabled():
+                return {'ok': False, 'error': 'disabled', 'applied': False}
+            if not isinstance(task, str) or not task.strip() or task.lstrip().startswith('/'):
+                return {'ok': False, 'error': 'skipped_task', 'applied': False}
+            runtime = runtime if isinstance(runtime, dict) else {}
+            existing = self.ctx.state.get('active_route', {}) if hasattr(self.ctx, 'state') else {}
+            if isinstance(existing, dict) and existing.get('session_id') == runtime.get('session_id') and existing.get('turn_id') == runtime.get('turn_id') and existing.get('turn_id'):
+                return {'ok': True, 'error': 'already_armed', 'applied': True}
+            candidates, _source = self.resolve_candidates(
+                provider=runtime.get('provider') or '',
+                current_model=runtime.get('model') or '',
+            )
+            if len(candidates) < 2:
+                return {'ok': False, 'error': 'insufficient_candidates', 'applied': False}
+            return self.route({
+                'task': task.strip()[:4000], 'candidates': candidates, 'apply': True,
+                '_runtime': runtime,
+            })
+        except Exception:
+            return {'ok': False, 'error': 'auto_route_skipped', 'applied': False, 'advisory_only': True,
+                    'execution_authorized': False}
 
     def _run(self, args):
         if not isinstance(args, dict):
@@ -130,10 +192,16 @@ class Service:
         task = args.get('task', args.get('state'))
         if task is None:
             raise ValueError('Provide task')
-        raw_candidates = args.get('candidates')
-        if raw_candidates is None:
-            raw_candidates = self.ctx.get_config('model_routes', [])
-        candidates = validate_candidates(raw_candidates)
+        runtime = args.get('_runtime', {})
+        if not isinstance(runtime, dict):
+            runtime = {}
+        candidates, _source = self.resolve_candidates(
+            args.get('candidates'),
+            provider=runtime.get('provider') or '',
+            current_model=runtime.get('model') or '',
+        )
+        if len(candidates) < 2:
+            raise ValueError('candidates must contain 2..32 model profiles')
         threshold = validate_min_confidence(args.get('min_confidence', self.ctx.get_config('route_min_confidence', None)))
         token = self.secret(SECRET_NAMES[backend])
         if not token:
@@ -143,9 +211,6 @@ class Service:
         apply_route = args.get('apply', True)
         if not isinstance(apply_route, bool):
             raise ValueError('apply must be a boolean')
-        runtime = args.get('_runtime', {})
-        if not isinstance(runtime, dict):
-            runtime = {}
         switch = self._apply_route(routed, runtime) if apply_route and routed['route_accepted'] else {
             'requested': apply_route, 'applied': False,
             'reason': 'route_needs_review' if not routed['route_accepted'] else 'apply_disabled',

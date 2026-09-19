@@ -87,7 +87,14 @@ Sources: [REST API](https://developers.cloudflare.com/ai-gateway/usage/rest-api/
 Two tools are available:
 
 - **`jev_evaluate`** for bounded classification, choice, yes/no and scoring. Exactly one of `preset` and `questions` is required.
-- **`jev_route`** for selecting one model profile for a task. It asks one finite choice question and returns top-level `selected_model`, `confidence`, and review status (the full decision is also under `route`). With `apply: true` (the default), an accepted result arms a request-scoped model override for subsequent Hermes provider requests in the current turn. It never switches providers or grants execution approval.
+- **`jev_route`** for selecting one model profile for a task. It asks one finite choice question and returns top-level `selected_model`, `confidence`, and review status. With `model_route_enabled: true`, this happens automatically on each user turn from the current Hermes provider catalog (or configured `model_routes`). An accepted result arms a request-scoped model override for subsequent Hermes provider requests in the current turn. It never switches providers or grants execution approval.
+
+Enable or disable passive routing:
+
+```sh
+hermes jev auto-route --enable
+hermes jev routes
+```
 
 Configure reusable non-secret profiles under the plugin setting `model_routes`:
 

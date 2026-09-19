@@ -14,7 +14,7 @@
 
 `jev_evaluate` 支持自定义问题和三个快速预设：`task_triage`（任务分类与风险信号）、`next_step`（下一步建议）、`relevance`（资料相关性）。新增 `jev_route`：让 Jev 在 2–32 个候选模型配置中选出更适合当前任务的一个，返回顶层 `selected_model`、`confidence` 和复核状态，完整决策也保留在 `route` 中。
 
-模型路由是显式、受范围限制的：`jev_route` 默认在置信度通过后，将选中的模型写入当前轮后续 Hermes provider 请求的 `model` 字段；不会修改持久化默认模型，也不会切换 provider。低置信度或 `apply: false` 时只返回建议，不会控制模型。
+模型路由默认关闭。打开 `model_route_enabled` 后，每轮用户消息会被动调用 Jev：优先用你配置的 `model_routes`，否则自动读取当前 Hermes provider 的模型目录。置信度通过后只改本轮后续请求的 `model` 字段；不换 provider，也不改持久化默认模型。斜杠命令和低置信度不会接管模型。
 
 ## 使用
 

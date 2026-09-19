@@ -19,6 +19,9 @@ class Context:
     def get_config(self, key, default=None):
         return self.settings.get(key, default)
 
+    def set_config(self, key, value):
+        self.settings[key] = value
+
 
 class State:
     def __init__(self):
@@ -101,6 +104,8 @@ class RoutingTests(unittest.TestCase):
         self.assertIsNone(middleware({'model': 'old-model'}, session_id='other-session', provider='openai-codex'))
         unchanged = middleware({'model': 'old-model'}, session_id='session-1', provider='anthropic')
         self.assertEqual(unchanged['request']['model'], 'old-model')
+        plugin_root._clear_model_route(ctx, session_id='session-1')
+        self.assertIsNone(middleware({'model': 'old-model'}, session_id='session-1', provider='openai-codex'))
 
     def test_low_or_missing_confidence_requires_review_without_guessing(self):
         from hermes_jev.service import Service
@@ -164,6 +169,52 @@ class RoutingTests(unittest.TestCase):
         build_parser(parser)
         self.assertEqual(parser.parse_args(['route', '--file', 'route.json']).jev_command, 'route')
         self.assertEqual(guide()['model_routing']['tool'], 'jev_route')
+        self.assertEqual(parser.parse_args(['auto-route', '--enable']).jev_command, 'auto-route')
+
+    def test_discovery_reads_hermes_ids_and_drops_variants(self):
+        from hermes_jev.discovery import candidates_from_models
+        models = candidates_from_models(
+            ['gpt-5.6-luna', 'gpt-5.6-luna-900k', 'gpt-5.6-sol', 'gpt-5.6-sol:batch', 'dall-e-3'],
+            provider='openai-codex', current_model='gpt-5.6-luna',
+        )
+        self.assertEqual([item['model'] for item in models], ['gpt-5.6-luna', 'gpt-5.6-sol'])
+        self.assertTrue(all(item['provider'] == 'openai-codex' for item in models))
+        self.assertIn('cheaper', models[0]['description'])
+
+    def test_auto_route_is_off_by_default_and_passive_when_enabled(self):
+        from hermes_jev.service import Service
+        catalog = {'provider': 'openai-codex', 'current_model': 'gpt-5.6-luna',
+                   'models': ['gpt-5.6-luna', 'gpt-5.6-sol']}
+        ctx = Context()
+        ctx.settings['connection'] = {'backend': 'typesafe'}
+        seen = []
+        service = Service(ctx, evaluator=lambda **kwargs: seen.append(kwargs) or {
+            'model': 'jev-fixture', 'answers': {'model': {'choice': 'gpt-5.6-sol', 'confidence': 0.99}},
+        }, secret_reader=lambda name: 'fixture-secret', catalog_reader=lambda provider: catalog)
+        skipped = service.auto_route_turn('complex architecture review', {'session_id': 's1', 'turn_id': 't1'})
+        self.assertEqual(skipped['error'], 'disabled')
+        self.assertFalse(seen)
+        ctx.set_config('model_route_enabled', True)
+        result = service.auto_route_turn('complex architecture review', {
+            'session_id': 's1', 'turn_id': 't1', 'provider': 'openai-codex',
+        })
+        self.assertTrue(result['ok'])
+        self.assertEqual(result['selected_model'], 'gpt-5.6-sol')
+        self.assertTrue(result['model_control']['applied'])
+        self.assertEqual(service.auto_route_turn('/new', {'session_id': 's1', 'turn_id': 't2'})['error'], 'skipped_task')
+
+    def test_auto_route_fails_open_without_raising(self):
+        from hermes_jev.service import Service
+        ctx = Context()
+        ctx.settings['model_route_enabled'] = True
+        ctx.settings['connection'] = {'backend': 'typesafe'}
+        service = Service(ctx, evaluator=lambda **kwargs: (_ for _ in ()).throw(RuntimeError('paid path')),
+                          secret_reader=lambda name: 'fixture-secret',
+                          catalog_reader=lambda provider: {'models': ['a', 'b'], 'provider': 'x'})
+        result = service.auto_route_turn('task', {'session_id': 's1'})
+        self.assertFalse(result['ok'])
+        self.assertIn(result['error'], {'auto_route_skipped', 'routing_failed'})
+        self.assertFalse(result.get('applied'))
 
 
 if __name__ == '__main__':

@@ -46,7 +46,7 @@ Use `terminal(command="hermes jev test")` for a small billed smoke call. No live
 ```
 Exactly one of `preset` and `questions` is required. A custom question's meaning must be in instructions/criteria, not only its key. Independent questions cannot see one another's answers. Use separate calls only for genuinely dependent stages.
 
-For model routing, call `jev_route` with a minimal `task` and either a `candidates` list or configured `model_routes`. Each candidate needs a unique `id`, `model`, and realistic capability/cost `description`; 2–32 candidates are supported. With the default `apply: true`, an accepted `selected_model` controls the outgoing model field for subsequent requests in the current turn. If `route_needs_review` is true, keep the current model or ask for review rather than switching.
+When `model_route_enabled` is true, do not wait for the user to ask: Jev routes the current Hermes provider catalog (or configured `model_routes`) at the start of each user turn. Explicit `jev_route` remains available. If `route_needs_review` is true, keep the current model.
 
 ## Decision discipline
 1. State the actual decision and provide a small relevant state. Remove secrets and irrelevant conversation history. Calling this tool sends that state to the configured external provider.
