@@ -39,8 +39,8 @@ class CLITests(unittest.TestCase):
         self.assertEqual(set(result['example_prompts']), set(result['presets']))
         for prompt in result['example_prompts'].values():
             self.assertRegex(prompt, r'[\u4e00-\u9fff]')
-        self.assertEqual(result['billing']['free_commands'], ['status', 'guide', 'presets'])
-        self.assertEqual(result['billing']['paid_commands'], ['setup', 'test', 'evaluate'])
+        self.assertEqual(result['billing']['free_commands'], ['status', 'guide', 'presets', 'routes'])
+        self.assertEqual(result['billing']['paid_commands'], ['setup', 'test', 'evaluate', 'route'])
         self.assertTrue(result['billing']['notice'])
         self.assertEqual(result['native_tool_missing']['cli_fallback'], 'hermes jev evaluate --file request.json')
         self.assertIn('jev:decision-sidekick', result['skill']['invocation'])

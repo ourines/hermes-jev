@@ -18,7 +18,7 @@ metadata:
 ## 快速处理
 - **“测试 Jev”**：用 `terminal` 运行 `hermes jev status`。已配置则告知一次小额真实测试可能计费，运行一次 `hermes jev test`；用户明确只查状态/不计费时只运行 status。未配置才引导 setup。不要重复测试或自动重试。
 - **“怎么用 Jev”**：解释三种预设和工具/CLI 两条路径，不调用付费接口。可用 `terminal` 运行 `hermes jev guide`；旧版没有 guide 时用 `hermes jev --help`。
-- **“用 Jev 判断……”**：先确定待判断的最小必要内容；优先 `jev_evaluate`。工具不可见就直接使用下述 CLI 路径，不把“缺工具入口”说成“没安装”，不自动重装或改 Token。
+- **“用 Jev 判断……”**：先确定待判断的最小必要内容；优先 `jev_evaluate`。需要在不同成本/能力模型间分流时使用 `jev_route`；工具不可见就直接使用下述 CLI 路径，不把“缺工具入口”说成“没安装”，不自动重装或改 Token。
 
 ## 调用方式
 如果工具目录有 `jev_evaluate`，传入：
@@ -36,7 +36,7 @@ metadata:
 
 ## 状态和故障
 1. `hermes jev status` 只检查本地设置/凭据存在性，不发推理请求。其 `online_verified: false` 不能解读为认证失败，只表示本次状态检查未做在线验证。
-2. CLI 工作不等于桌面已收到工具。插件注册的 namespaced Skill 不自动进入 available_skills；本条普通 Skill 提供发现入口。新会话也不保证长驻后端重载插件。只有实际工具目录出现 `jev_evaluate` 才报告原生工具就绪。
+2. CLI 工作不等于桌面已收到工具。插件注册的 namespaced Skill 不自动进入 available_skills；本条普通 Skill 提供发现入口。新会话也不保证长驻后端重载插件。只有实际工具目录出现 `jev_evaluate` 和 `jev_route` 才报告原生入口就绪。
 3. CLI 命令不存在时，用 `terminal` 运行 `hermes plugins list --plain --no-bundled`，核对当前 Profile；不要读取完整 .env/auth.json，不要盲目重装或重启活跃会话。
 4. 403/code 2049：检查所选 AI Gateway 认证；不盲目换 Key/充值。invalid_response：保留静态诊断，不能把接口返回结构不匹配说成 Token 失效。
 5. 配置需要用户在交互终端隐藏录入；不从聊天收取 Token。只有用户明确要求配置时才启动 setup，不自动更换主模型或后端。

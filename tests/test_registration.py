@@ -34,9 +34,14 @@ class RegistrationTests(unittest.TestCase):
             def register_skill(self, name, path): self.skills.append((name, path))
         ctx = Ctx()
         module.register(ctx)
-        self.assertEqual([tool['name'] for tool in ctx.tools], ['jev_evaluate'])
+        self.assertEqual([tool['name'] for tool in ctx.tools], ['jev_evaluate', 'jev_route'])
         result = ctx.tools[0]['handler']({'state': 'hello', 'preset': 'task_triage'})
         self.assertIn('not_configured', result)
+        route_result = ctx.tools[1]['handler']({'task': 'hello', 'candidates': [
+            {'id': 'fast', 'model': 'cheap', 'description': 'Simple tasks'},
+            {'id': 'deep', 'model': 'capable', 'description': 'Complex tasks'},
+        ]})
+        self.assertIn('not_configured', route_result)
         self.assertTrue(ctx.skills[0][1].is_file())
         command = ctx.commands[0]
         parser = argparse.ArgumentParser()

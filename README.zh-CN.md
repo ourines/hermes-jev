@@ -1,4 +1,4 @@
-# Hermes Jev 决策副手
+# Hermes Jev 决策副手与模型路由
 
 通用 Hermes 工具插件，同时支持 TypeSafe 官方和 Cloudflare。不是聊天 Provider，不替换主模型。
 
@@ -12,7 +12,9 @@
 - **Jev**：答案集合明确的分类、真假判断、量表评分。
 - **主 Agent / 人**：规划、生成、复杂推理、不确定情况，以及执行授权。
 
-一个 `jev_evaluate` 工具，支持自定义问题和三个快速预设：`task_triage`（任务分类与风险信号）、`next_step`（下一步建议）、`relevance`（资料相关性）。同一状态的一组独立问题放在同一次请求里。
+`jev_evaluate` 支持自定义问题和三个快速预设：`task_triage`（任务分类与风险信号）、`next_step`（下一步建议）、`relevance`（资料相关性）。新增 `jev_route`：让 Jev 在 2–32 个候选模型配置中选出更适合当前任务的一个，返回顶层 `selected_model`、`confidence` 和复核状态，完整决策也保留在 `route` 中。
+
+模型路由是显式、受范围限制的：`jev_route` 默认在置信度通过后，将选中的模型写入当前轮后续 Hermes provider 请求的 `model` 字段；不会修改持久化默认模型，也不会切换 provider。低置信度或 `apply: false` 时只返回建议，不会控制模型。
 
 ## 使用
 
@@ -28,7 +30,7 @@ hermes jev test
 
 配置在交互终端输入，Token 隐藏，不放命令参数，也不发聊天。验证成功后保存，主模型不变。配置和测试会发送少量请求，可能计费。
 
-**安装成功不等于桌面会话已收到工具。** 确认实际工具目录中有 `jev_evaluate` 才视为原生入口就绪；新开对话不保证长驻后端刷新插件。工具不可见时，Agent 可直接通过 `hermes jev evaluate --file request.json` 调用，无需用户自己写命令，也无需重新配置 Token。不要为了加载工具擅自重启正在执行任务的后端。
+**安装成功不等于桌面会话已收到工具。** 确认实际工具目录中有 `jev_evaluate` 和 `jev_route` 才视为原生入口就绪；新开对话不保证长驻后端刷新插件。工具不可见时，Agent 可直接通过 `hermes jev evaluate --file request.json` 或 `hermes jev route --file route.json` 调用，无需用户自己写命令，也无需重新配置 Token。不要为了加载工具擅自重启正在执行任务的后端。
 
 ### 让 Agent 一开始就知道 Jev
 
@@ -60,6 +62,22 @@ hermes jev setup --backend cloudflare --account-id 你的账户ID --gateway-id �
 
 ## 不做什么
 
-不自动批准、不派工、不自动执行命令、不监听全部消息、不每一步都调用、不隐式切换后端。默认不启用置信度阈值过滤；如显式配置，须先用目标数据校准，也不能当作正确率保证。输入会发给所选服务商，必须先去除密钥和无关私密信息。
+不自动批准、不派工、不自动执行命令、不监听全部消息、不每一步都调用、不隐式切换 provider。模型路由只在当前轮请求范围内控制 `model` 字段；默认不启用置信度阈值过滤；如显式配置，须先用目标数据校准，也不能当作正确率保证。输入会发给所选服务商，必须先去除密钥和无关私密信息。
 
-完整安装、配置、限制和测试见 [README.md](README.md)。生产接入前应以真实中文样本做独立测试；连通性测试不能证明决策可靠。
+可在插件设置 `model_routes` 中配置模型候选（只放非敏感的模型 ID 和能力描述），例如：
+
+```json
+[
+  {"id":"fast","model":"your-cheap-model","description":"简单问答、格式化、小改动，成本低、速度快。"},
+  {"id":"reasoning","model":"your-reasoning-model","description":"复杂调试、多文件修改和长链路推理。","cost_tier":"high"}
+]
+```
+
+也可以通过 Hermes 配置命令写入该设置（命令不会发送请求；具体模型 ID 换成你当前 Profile 已配置的值）：
+
+```sh
+hermes config set plugins.entries.jev.settings.model_routes '[{"id":"fast","model":"your-cheap-model","description":"简单问答、格式化、小改动，成本低、速度快。"},{"id":"reasoning","model":"your-reasoning-model","description":"复杂调试、多文件修改和长链路推理。","cost_tier":"high"}]'
+hermes config set plugins.entries.jev.settings.route_min_confidence 0.8
+```
+
+也可以在 `jev_route` 调用时直接传 `candidates`。配置 `route_min_confidence` 后，缺少或低于阈值会返回 `route_needs_review: true`；该阈值不是准确率保证，也不代表执行授权。完整安装、配置、限制和测试见 [README.md](README.md)。生产接入前应以真实中文样本做独立测试；连通性测试不能证明决策可靠。

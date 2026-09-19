@@ -1,6 +1,6 @@
-# Hermes Jev — decision sidekick
+# Hermes Jev — decision sidekick and model router
 
-A native **tool plugin**, not a chat-model provider. Jev supplies bounded semantic judgments; the main Hermes agent keeps planning, generation, tool execution and responsibility for approvals.
+A native **tool plugin**, not a chat-model provider. Jev supplies bounded semantic judgments and an explicit model recommendation; the main Hermes agent keeps planning, generation, tool execution and responsibility for approvals.
 
 **v0.1.2 is a prerelease. A live Cloudflare Chinese smoke test passed with `jev-1.13.0`; direct TypeSafe access and real-workload accuracy remain unverified.**
 
@@ -58,7 +58,7 @@ hermes jev presets      # show shipped rubrics; offline
 hermes jev evaluate --file examples/task-triage.json
 ```
 
-Installation/enabling, live API access, and exposure in a desktop agent tool catalog are separate checks. Confirm `jev_evaluate` in the actual catalog before claiming native-tool readiness; opening a new chat does not guarantee a long-running backend reloads plugins. Use `hermes jev evaluate --file request.json` as the agent-operated fallback, without reinstalling or changing credentials. Do not interrupt active work by restarting the backend without approval.
+Installation/enabling, live API access, and exposure in a desktop agent tool catalog are separate checks. Confirm `jev_evaluate` and `jev_route` in the actual catalog before claiming native-tool readiness; opening a new chat does not guarantee a long-running backend reloads plugins. Use `hermes jev evaluate --file request.json` or `hermes jev route --file route.json` as the agent-operated fallback, without reinstalling or changing credentials. Do not interrupt active work by restarting the backend without approval.
 
 For first-turn discovery, install the ordinary companion skill from `skills/jev/SKILL.md` into the current profile using `skill_manage` (local name `jev`). Unlike plugin-namespaced skills, ordinary skills appear in the startup skill index. Installation is explicit; plugin loading never writes user skills. The companion handles “测试 Jev”, usage questions, task judgments and status-only requests, with native-tool/CLI fallback and billing boundaries. It does not run inference automatically. `hermes jev guide` is an offline onboarding command. `status` reports local configuration only; its legacy `online_verified: false` means no live check was performed, not that authentication failed.
 
@@ -84,7 +84,34 @@ Sources: [REST API](https://developers.cloudflare.com/ai-gateway/usage/rest-api/
 
 ## Agent interface
 
-One tool: **`jev_evaluate`**. Exactly one of `preset` and `questions` is required.
+Two tools are available:
+
+- **`jev_evaluate`** for bounded classification, choice, yes/no and scoring. Exactly one of `preset` and `questions` is required.
+- **`jev_route`** for selecting one model profile for a task. It asks one finite choice question and returns top-level `selected_model`, `confidence`, and review status (the full decision is also under `route`). With `apply: true` (the default), an accepted result arms a request-scoped model override for subsequent Hermes provider requests in the current turn. It never switches providers or grants execution approval.
+
+Configure reusable non-secret profiles under the plugin setting `model_routes`:
+
+```json
+[
+  {"id":"fast","model":"your-cheap-model","description":"Simple Q&A, formatting and small edits; low cost and fast."},
+  {"id":"reasoning","model":"your-reasoning-model","description":"Complex debugging, multi-file changes and long-chain reasoning.","cost_tier":"high"}
+]
+```
+
+Or pass `candidates` directly to `jev_route`. Example request:
+
+```json
+{"task":"修复登录故障并补测试","min_confidence":0.8}
+```
+
+Set the profiles through Hermes's supported config command (replace the model IDs with values configured in the active profile):
+
+```sh
+hermes config set plugins.entries.jev.settings.model_routes '[{"id":"fast","model":"your-cheap-model","description":"Simple Q&A, formatting and small edits; low cost and fast."},{"id":"reasoning","model":"your-reasoning-model","description":"Complex debugging, multi-file changes and long-chain reasoning.","cost_tier":"high"}]'
+hermes config set plugins.entries.jev.settings.route_min_confidence 0.8
+```
+
+`route_min_confidence` is an optional threshold. When confidence is missing or below it, `route_needs_review` is true and no model override is armed. Thresholds are not calibrated accuracy guarantees. Routing changes only the outgoing request's `model` field for the current turn; it does not rewrite the persistent Hermes default or change providers.
 
 ```json
 {"state":"线上登录白屏，请先排查原因。", "preset":"task_triage"}
@@ -118,6 +145,7 @@ To explicitly enable this heuristic using the supported configuration interface 
 
 ```sh
 hermes config set plugins.entries.jev.settings.review_threshold 0.9
+hermes config set plugins.entries.jev.settings.route_min_confidence 0.8
 ```
 
 ## Safety and privacy
