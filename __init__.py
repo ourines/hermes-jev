@@ -3,22 +3,60 @@ import json
 from pathlib import Path
 
 
-def _model_route_middleware(ctx):
-    """Rewrite only the outgoing model field for the matching Hermes session."""
+def _task_text(value):
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, list):
+        parts = []
+        for item in value:
+            if isinstance(item, str) and item.strip():
+                parts.append(item.strip())
+            elif isinstance(item, dict):
+                text = item.get('text') or item.get('content') or ''
+                if isinstance(text, str) and text.strip():
+                    parts.append(text.strip())
+        return '\n'.join(parts)
+    return ''
+
+
+def _rewrite_armed_request(ctx, request, kwargs):
+    runtime = ctx.state.get('active_route', {})
+    if not isinstance(runtime, dict) or runtime.get('session_id') != kwargs.get('session_id'):
+        return None
+    saved_turn = runtime.get('turn_id')
+    if saved_turn and saved_turn != kwargs.get('turn_id'):
+        return None
+    saved_provider = runtime.get('provider')
+    current_provider = kwargs.get('provider')
+    if saved_provider and current_provider and saved_provider != current_provider:
+        return {'request': request, 'source': 'jev', 'reason': 'provider_mismatch_no_switch'}
+    if not runtime.get('model'):
+        return None
+    rewritten = dict(request)
+    rewritten['model'] = runtime['model']
+    return {'request': rewritten, 'source': 'jev', 'reason': f"route:{runtime.get('route_id', 'selected')}"}
+
+
+def _model_route_middleware(ctx, service=None):
+    """Rewrite the outgoing model after an explicit or passive Jev route."""
     def middleware(request, **kwargs):
-        runtime = ctx.state.get('active_route', {})
-        if not isinstance(runtime, dict) or runtime.get('session_id') != kwargs.get('session_id'):
+        armed = _rewrite_armed_request(ctx, request, kwargs)
+        if armed is not None:
+            return armed
+        if service is None:
             return None
-        saved_turn = runtime.get('turn_id')
-        if saved_turn and saved_turn != kwargs.get('turn_id'):
+        pending = ctx.state.get('pending_route', {})
+        session_id = kwargs.get('session_id')
+        if not isinstance(pending, dict) or pending.get('session_id') != session_id:
             return None
-        saved_provider = runtime.get('provider')
-        current_provider = kwargs.get('provider')
-        if saved_provider and current_provider and saved_provider != current_provider:
-            return {'request': request, 'source': 'jev', 'reason': 'provider_mismatch_no_switch'}
-        rewritten = dict(request)
-        rewritten['model'] = runtime['model']
-        return {'request': rewritten, 'source': 'jev', 'reason': f"route:{runtime.get('route_id', 'selected')}"}
+        service.auto_route_turn(pending.get('task') or '', {
+            'session_id': session_id,
+            'turn_id': kwargs.get('turn_id') or pending.get('turn_id') or '',
+            'provider': kwargs.get('provider') or '',
+            'model': kwargs.get('model') or '',
+        })
+        ctx.state.set('pending_route', {})
+        return _rewrite_armed_request(ctx, request, kwargs)
     return middleware
 
 
@@ -32,6 +70,7 @@ def _clear_model_route(ctx, **kwargs):
     if saved_turn and current_turn and saved_turn != current_turn:
         return None
     ctx.state.set('active_route', {})
+    ctx.state.set('pending_route', {})
     return None
 
 
@@ -78,12 +117,19 @@ def register(ctx):
     )
 
     if hasattr(ctx, 'register_middleware'):
-        ctx.register_middleware('llm_request', _model_route_middleware(ctx))
+        ctx.register_middleware('llm_request', _model_route_middleware(ctx, service))
     if hasattr(ctx, 'register_hook'):
         def on_pre_llm_call(**kwargs):
-            service.auto_route_turn(kwargs.get('user_message') or '', {
-                key: kwargs.get(key) for key in ('session_id', 'turn_id', 'provider', 'model')
-                if kwargs.get(key) is not None
+            if not service.auto_route_enabled():
+                return None
+            task = _task_text(kwargs.get('user_message'))
+            session_id = kwargs.get('session_id')
+            if not task or not isinstance(session_id, str) or not session_id or task.lstrip().startswith('/'):
+                return None
+            ctx.state.set('pending_route', {
+                'session_id': session_id,
+                'turn_id': kwargs.get('turn_id') or '',
+                'task': task[:4000],
             })
             return None
         ctx.register_hook('pre_llm_call', on_pre_llm_call)
