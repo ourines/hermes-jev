@@ -89,6 +89,8 @@ class RegistrationTests(unittest.TestCase):
                 session_id='session-1', turn_id='turn-1',
             )
         self.assertEqual(result, {'provider': 'provider-b', 'model': 'model-b'})
+        self.assertIn('pre_llm_call', ctx.hooks)
+        self.assertIsNone(ctx.hooks['pre_llm_call'](user_message='sort records'))
         self.assertEqual(route.call_args.args[0], 'sort records')
         self.assertEqual(route.call_args.args[1]['provider'], 'provider-a')
 
