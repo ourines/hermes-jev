@@ -4,8 +4,10 @@ from .client import safe_error_details, validate_gateway_id
 from .discovery import candidates_from_models, read_hermes_runtime, truthy
 from .routing import route_questions, route_result, validate_candidates, validate_min_confidence
 
-SECRET_NAMES = {'typesafe': 'TYPESAFE_API_KEY', 'cloudflare': 'CLOUDFLARE_JEV_API_TOKEN'}
-MODELS = {'typesafe': 'jev-latest', 'cloudflare': 'typesafe/jev'}
+SECRET_NAMES = {'typesafe': 'TYPESAFE_API_KEY', 'cloudflare': 'CLOUDFLARE_JEV_API_TOKEN',
+                'openrouter': 'OPENROUTER_JEV_API_TOKEN'}
+MODELS = {'typesafe': 'jev-latest', 'cloudflare': 'typesafe/jev',
+          'openrouter': 'typesafe/jev-1.13'}
 
 
 def credential_name_present(name):

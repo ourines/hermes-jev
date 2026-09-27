@@ -12,8 +12,11 @@ A native **tool plugin**, not a chat-model provider. Jev supplies bounded semant
 |---|---|---|---|
 | TypeSafe official | `jev-latest` | `TYPESAFE_API_KEY` | `https://api.typesafe.ai/v1/systemone` |
 | Cloudflare AI | `typesafe/jev` | `CLOUDFLARE_JEV_API_TOKEN` + non-secret Account ID | `https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/run` |
+| OpenRouter | `typesafe/jev-1.13` | `OPENROUTER_JEV_API_TOKEN` | `https://openrouter.ai/api/alpha/decisions` |
 
 Select one explicitly. No cross-provider fallback, credential reuse, automatic retries or redirected authenticated requests. Model aliases may change upstream; results preserve the actual model ID returned.
+
+OpenRouter serves the same request/answer contract from an **alpha** endpoint and rejects the `jev-latest` alias (`HTTP 400 Model typesafe/jev-latest does not exist`), so this backend's default pins the versioned model id; `--model` overrides it. Use a dedicated key with its own limits instead of a general-purpose OpenRouter key.
 
 ## Installation
 
@@ -25,6 +28,7 @@ Public repository install (after the release is published):
 hermes plugins install ourines/hermes-jev --enable
 hermes jev setup --backend typesafe
 # or: hermes jev setup --backend cloudflare
+# or: hermes jev setup --backend openrouter
 ```
 
 For a reproducible install, add `--ref <full-release-commit-sha>` from the release page. This is a community/custom source, not a Hermes catalog entry. Review source before enabling. Installing official skills separately is unnecessary because a pinned official skill is bundled.
@@ -45,11 +49,13 @@ A development symlink from that directory to the checkout is also supported on s
 hermes jev setup --backend typesafe
 # OR
 hermes jev setup --backend cloudflare
+# OR
+hermes jev setup --backend openrouter
 ```
 
 Setup asks for a Cloudflare Account ID when needed, then uses hidden terminal input for the key. It refuses non-interactive/echo-fallback entry. There is deliberately **no `--api-key` argument**. One tiny live evaluation is made before credentials and connection settings are saved. This can incur usage charges. Failed validation does not save the new credential.
 
-Keys use Hermes's credential save path and reside in the active profile's `.env`/credential lifecycle. Non-secret connection settings use `ctx.set_config()` under `plugins.entries.jev.settings.connection`. Setup verifies the writes by read-back without printing credentials. The main model is untouched. A backend switch is explicit and leaves the previous backend's credential available, but inactive. TypeSafe setup updates that profile's `TYPESAFE_API_KEY`; Cloudflare uses a dedicated slot, never a generic Cloudflare token.
+Keys use Hermes's credential save path and reside in the active profile's `.env`/credential lifecycle. Non-secret connection settings use `ctx.set_config()` under `plugins.entries.jev.settings.connection`. Setup verifies the writes by read-back without printing credentials. The main model is untouched. A backend switch is explicit and leaves the previous backend's credential available, but inactive. TypeSafe setup updates that profile's `TYPESAFE_API_KEY`; Cloudflare and OpenRouter use dedicated slots, never a generic Cloudflare or OpenRouter token.
 
 ```sh
 hermes jev status       # local presence only; not evidence of API access

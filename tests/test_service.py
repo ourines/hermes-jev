@@ -94,6 +94,24 @@ class ServiceTests(unittest.TestCase):
         service.run({'state': '写说明文档', 'preset': 'task_triage'})
         self.assertEqual(requests[-1]['backend'], 'cloudflare')
         self.assertEqual(requests[-1]['account_id'], 'a' * 32)
+        ctx.settings['connection'] = {'backend': 'openrouter'}
+        service.run({'state': '写说明文档', 'preset': 'task_triage'})
+        self.assertEqual(requests[-1]['backend'], 'openrouter')
+        self.assertEqual(requests[-1]['model'], 'typesafe/jev-1.13')
+        self.assertEqual(requests[-1]['account_id'], '')
+
+    def test_each_backend_declares_a_credential_slot_and_a_default_model(self):
+        import types
+        package = types.ModuleType('hermes_jev')
+        package.__path__ = [str(ROOT)]
+        sys.modules.setdefault('hermes_jev', package)
+        service = __import__('hermes_jev.service', fromlist=['Service'])
+        self.assertEqual(set(service.SECRET_NAMES), set(service.MODELS))
+        self.assertEqual(set(service.MODELS), {'typesafe', 'cloudflare', 'openrouter'})
+        for backend, name in service.SECRET_NAMES.items():
+            with self.subTest(backend=backend):
+                self.assertNotEqual(name, 'OPENROUTER_API_KEY')
+                self.assertTrue(service.MODELS[backend])
 
     def test_tool_result_control_fields_are_local_not_evaluator_supplied(self):
         import types
