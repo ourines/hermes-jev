@@ -162,23 +162,38 @@ def register(ctx):
             ensure_ascii=False),
     )
 
-    if hasattr(ctx, 'register_middleware'):
-        ctx.register_middleware('llm_request', _model_route_middleware(ctx, service))
+    native_turn_route = False
     if hasattr(ctx, 'register_hook'):
-        def on_pre_llm_call(**kwargs):
-            if not service.auto_route_enabled():
-                return None
-            task = _task_text(kwargs.get('user_message'))
-            session_id = kwargs.get('session_id')
-            if not task or not isinstance(session_id, str) or not session_id or task.lstrip().startswith('/'):
-                return None
-            ctx.state.set('pending_route', {
-                'session_id': session_id,
-                'turn_id': kwargs.get('turn_id') or '',
-                'task': task[:4000],
+        def on_pre_model_route(**kwargs):
+            return service.plan_turn_route(_task_text(kwargs.get('user_message')), {
+                key: kwargs.get(key) for key in ('session_id', 'turn_id', 'provider', 'model')
             })
-            return None
-        ctx.register_hook('pre_llm_call', on_pre_llm_call)
+        try:
+            ctx.register_hook('pre_model_route', on_pre_model_route)
+            native_turn_route = True
+        except (ValueError, KeyError):
+            pass  # Older Hermes versions support request-scoped routing only.
+
+    if hasattr(ctx, 'register_middleware'):
+        ctx.register_middleware(
+            'llm_request', _model_route_middleware(ctx, None if native_turn_route else service),
+        )
+    if hasattr(ctx, 'register_hook'):
+        if not native_turn_route:
+            def on_pre_llm_call(**kwargs):
+                if not service.auto_route_enabled():
+                    return None
+                task = _task_text(kwargs.get('user_message'))
+                session_id = kwargs.get('session_id')
+                if not task or not isinstance(session_id, str) or not session_id or task.lstrip().startswith('/'):
+                    return None
+                ctx.state.set('pending_route', {
+                    'session_id': session_id,
+                    'turn_id': kwargs.get('turn_id') or '',
+                    'task': task[:4000],
+                })
+                return None
+            ctx.register_hook('pre_llm_call', on_pre_llm_call)
         ctx.register_hook('post_llm_call', lambda **kwargs: _clear_model_route(ctx, **kwargs))
     ctx.register_cli_command(name='jev', help='Configure and test the Jev decision sidekick',
                              setup_fn=build_parser, handler_fn=lambda args: dispatch(ctx, args))
