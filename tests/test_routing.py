@@ -152,6 +152,41 @@ class RoutingTests(unittest.TestCase):
         self.assertEqual(rewritten['request']['model'], 'gpt-5.6-sol')
         self.assertEqual(ctx.state.get('last_auto_route')['selected_model'], 'gpt-5.6-sol')
 
+    def test_passive_route_status_reports_effective_request_model(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('jev_plugin_root_status', ROOT / '__init__.py')
+        plugin_root = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(plugin_root)
+        from hermes_jev.service import Service
+        ctx = Context()
+        ctx.settings['connection'] = {'backend': 'typesafe'}
+        ctx.settings['model_routes'] = MODELS
+        ctx.set_config('model_route_enabled', True)
+        choice = {'model': 'jev-fixture', 'answers': {'model': {'choice': 'fast', 'confidence': 0.99}}}
+        service = Service(ctx, evaluator=lambda **kwargs: choice,
+                          secret_reader=lambda name: 'fixture-secret')
+        middleware = plugin_root._model_route_middleware(ctx, service)
+        request = {'model': 'default-model', 'messages': [{'role': 'user', 'content': 'Check weather'}]}
+        rewritten = middleware(request, session_id='session-a', turn_id='turn-a',
+                               provider='service-a', platform='chat', model='default-model')
+        self.assertEqual(rewritten['request']['model'], 'cheap-model')
+        observed = service.status()['last_auto_route']
+        self.assertEqual(observed['effective_model'], 'cheap-model')
+        self.assertTrue(observed['applied'])
+        self.assertTrue(observed['request_model_changed'])
+        self.assertNotIn('fixture-secret', str(observed))
+
+        ctx.state.set('active_route', {})
+        choice['answers']['model']['confidence'] = 0.1
+        ctx.settings['route_min_confidence'] = 0.8
+        skipped = middleware(request, session_id='session-a', turn_id='turn-b',
+                             provider='service-a', platform='chat', model='default-model')
+        self.assertIsNone(skipped)
+        observed = service.status()['last_auto_route']
+        self.assertEqual(observed['effective_model'], 'default-model')
+        self.assertFalse(observed['applied'])
+        self.assertFalse(observed['request_model_changed'])
+
     def test_low_or_missing_confidence_requires_review_without_guessing(self):
         from hermes_jev.service import Service
         ctx = Context()
