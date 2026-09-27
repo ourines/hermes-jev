@@ -159,6 +159,11 @@ class Service:
                 provider=runtime.get('provider') or '',
                 current_model=runtime.get('model') or '',
             )
+            active_provider = runtime.get('provider') or ''
+            candidates = [
+                candidate for candidate in candidates
+                if not candidate.get('provider') or candidate['provider'] == active_provider
+            ]
             if len(candidates) < 2:
                 return {'ok': False, 'error': 'insufficient_candidates', 'applied': False}
             return self.route({
@@ -235,12 +240,16 @@ class Service:
         turn_id = runtime.get('turn_id')
         if not isinstance(session_id, str) or not session_id:
             return {'requested': True, 'applied': False, 'reason': 'missing_session_id'}
+        candidate_provider = routed['route']['candidate'].get('provider')
+        active_provider = runtime.get('provider')
+        if candidate_provider and candidate_provider != active_provider:
+            return {'requested': True, 'applied': False, 'reason': 'provider_mismatch_no_switch'}
         selection = {
             'session_id': session_id,
             'turn_id': turn_id if isinstance(turn_id, str) else '',
             'model': routed['selected_model'],
             'route_id': routed['route']['route_id'],
-            'provider': runtime.get('provider') if isinstance(runtime.get('provider'), str) else '',
+            'provider': active_provider if isinstance(active_provider, str) else '',
         }
         self.ctx.state.set('active_route', selection)
         return {

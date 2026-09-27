@@ -335,7 +335,7 @@ class RoutingTests(unittest.TestCase):
         service = Service(ctx, evaluator=lambda **kwargs: (_ for _ in ()).throw(RuntimeError('paid path')),
                           secret_reader=lambda name: 'fixture-secret',
                           catalog_reader=lambda provider: {'models': ['a', 'b'], 'provider': 'x'})
-        result = service.auto_route_turn('task', {'session_id': 's1'})
+        result = service.auto_route_turn('task', {'session_id': 's1', 'provider': 'x'})
         self.assertFalse(result['ok'])
         self.assertIn(result['error'], {'auto_route_skipped', 'routing_failed'})
         self.assertFalse(result.get('applied'))
