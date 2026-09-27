@@ -89,4 +89,4 @@ hermes config set plugins.entries.jev.settings.model_routes '[{"id":"fast","mode
 hermes config set plugins.entries.jev.settings.route_min_confidence 0.8
 ```
 
-也可以在 `jev_route` 调用时直接传 `candidates`。配置 `route_min_confidence` 后，缺少或低于阈值会返回 `route_needs_review: true`；该阈值不是准确率保证，也不代表执行授权。完整安装、配置、限制和测试见 [README.md](README.md)。生产接入前应以真实中文样本做独立测试；连通性测试不能证明决策可靠。
+也可以在 `jev_route` 调用时直接传 `candidates`。配置 `route_min_confidence` 后，缺少或低于阈值会返回 `route_needs_review: true`；该阈值不是准确率保证，也不代表执行授权。网关处理一轮消息后，运行 `hermes jev status` 查看 `last_auto_route.applied` 和 `last_auto_route.effective_model`，查看 Jev 中间件的改写结果。普通会话和用量日志打印的是持久化默认模型，不能据此判断请求是否改写；后续中间件仍可能修改请求，该状态也不证明服务商接受了模型。完整安装、配置、限制和测试见 [README.md](README.md)。生产接入前应以真实中文样本做独立测试；连通性测试不能证明决策可靠。

@@ -89,14 +89,19 @@ def _model_route_middleware(ctx, service=None):
             'model': kwargs.get('model') or '',
         })
         ctx.state.set('pending_route', {})
+        rewritten = _rewrite_armed_request(ctx, request, kwargs)
+        effective_request = rewritten['request'] if rewritten is not None else request
+        effective_model = effective_request.get('model')
         ctx.state.set('last_auto_route', {
             'ok': result.get('ok'),
             'error': result.get('error'),
             'selected_model': result.get('selected_model'),
             'route_accepted': result.get('route_accepted'),
-            'applied': (result.get('model_control') or {}).get('applied'),
+            'applied': bool(rewritten and rewritten.get('reason', '').startswith('route:')),
+            'effective_model': effective_model,
+            'request_model_changed': effective_model != request.get('model'),
         })
-        return _rewrite_armed_request(ctx, request, kwargs)
+        return rewritten
     return middleware
 
 
