@@ -54,6 +54,44 @@ class RegistrationTests(unittest.TestCase):
             with contextlib.redirect_stderr(io.StringIO()):
                 parser.parse_args(['setup', '--api-key', 'not-allowed'])
 
+    def test_turn_route_hook_returns_provider_and_model_together(self):
+        from unittest.mock import patch
+
+        spec = importlib.util.spec_from_file_location(
+            'jev_plugin_route_test', ROOT / '__init__.py',
+            submodule_search_locations=[str(ROOT)],
+        )
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+
+        class Ctx:
+            def __init__(self):
+                self.hooks = {}
+                self.middleware = {}
+                self.state = type('State', (), {'get': lambda *_: {}, 'set': lambda *_: None})()
+            def get_config(self, key, default=None):
+                return True if key == 'model_route_enabled' else default
+            def register_tool(self, **kwargs): pass
+            def register_cli_command(self, **kwargs): pass
+            def register_skill(self, *args): pass
+            def register_hook(self, name, callback): self.hooks[name] = callback
+            def register_middleware(self, name, callback): self.middleware[name] = callback
+
+        ctx = Ctx()
+        module.register(ctx)
+        service_module = sys.modules['jev_plugin_route_test.service']
+        with patch.object(service_module.Service, 'plan_turn_route', return_value={
+            'provider': 'provider-b', 'model': 'model-b',
+        }) as route:
+            result = ctx.hooks['pre_model_route'](
+                user_message='sort records', provider='provider-a', model='model-a',
+                session_id='session-1', turn_id='turn-1',
+            )
+        self.assertEqual(result, {'provider': 'provider-b', 'model': 'model-b'})
+        self.assertEqual(route.call_args.args[0], 'sort records')
+        self.assertEqual(route.call_args.args[1]['provider'], 'provider-a')
+
 
 if __name__ == '__main__':
     unittest.main()
