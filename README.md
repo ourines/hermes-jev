@@ -124,7 +124,7 @@ hermes config set plugins.entries.jev.settings.model_routes '[{"id":"fast","mode
 hermes config set plugins.entries.jev.settings.route_min_confidence 0.8
 ```
 
-`route_min_confidence` is an optional threshold. When confidence is missing or below it, `route_needs_review` is true and no model override is armed. Thresholds are not calibrated accuracy guarantees. Routing changes only the outgoing request's `model` field for the current turn; it does not rewrite the persistent Hermes default or change providers.
+`route_min_confidence` is an optional threshold. When confidence is missing or below it, `route_needs_review` is true and no model override is armed. Thresholds are not calibrated accuracy guarantees. Routing changes only the outgoing request's `model` field for the current turn; it does not rewrite the persistent Hermes default or change providers. After a gateway turn, run `hermes jev status` and inspect `last_auto_route.applied` and `last_auto_route.effective_model` to see the Jev middleware result. Normal turn and usage log lines show the persistent model, so they cannot confirm the outgoing request model. The status observation does not verify provider acceptance.
 
 ```json
 {"state":"线上登录白屏，请先排查原因。", "preset":"task_triage"}

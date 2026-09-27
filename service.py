@@ -58,10 +58,16 @@ class Service:
         except Exception:
             present = False
         configured = backend in SECRET_NAMES and present
+        state = getattr(self.ctx, 'state', None)
+        observed = state.get('last_auto_route', {}) if state is not None else {}
+        last_auto_route = ({key: observed.get(key) for key in (
+            'ok', 'error', 'selected_model', 'route_accepted', 'applied',
+            'effective_model', 'request_model_changed',
+        )} if isinstance(observed, dict) and isinstance(observed.get('effective_model'), str) else {})
         return {'backend': backend, 'model': connection.get('model') or MODELS.get(backend),
                 'account_id': connection.get('account_id', ''), 'credential_present': present,
                 'gateway_id': connection.get('gateway_id'),
-                'configured': configured,
+                'configured': configured, 'last_auto_route': last_auto_route,
                 'credential_presence_scope': 'loaded_names_only_not_token_validity',
                 'verification_scope': 'local_configuration_only',
                 'online_verification': 'not_checked',
@@ -72,7 +78,9 @@ class Service:
                               'use hermes jev guide for free guidance.'),
                 'status_note': 'Presence means a credential name is loaded, not that its value is nonempty or valid. '
                                'No token values were read. online_verified=false means not checked here, '
-                               'not a failed online test. This CLI does not check desktop tool visibility.',
+                               'not a failed online test. This CLI does not check desktop tool visibility. '
+                               'last_auto_route records the most recent Jev middleware result; '
+                               'later middleware changes and provider acceptance are not checked.',
                 'online_verified': False, 'advisory_only': True}
 
     def run(self, args):

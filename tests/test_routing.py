@@ -187,6 +187,9 @@ class RoutingTests(unittest.TestCase):
         self.assertFalse(observed['applied'])
         self.assertFalse(observed['request_model_changed'])
 
+        ctx.state.set('last_auto_route', {'selected_model': 'cheap-model', 'applied': True})
+        self.assertEqual(service.status()['last_auto_route'], {})
+
     def test_low_or_missing_confidence_requires_review_without_guessing(self):
         from hermes_jev.service import Service
         ctx = Context()
