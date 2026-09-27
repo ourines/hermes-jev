@@ -47,6 +47,15 @@ assert.deepEqual(
   ] }), route => `${route.provider}/${route.model}`),
   ['provider-a/model-a', 'provider-a/model-b']
 )
+const sharedRoutes = catalogRoutes({ providers: [
+  { slug: 'provider-a', authenticated: true, models: ['shared/model'] },
+  { slug: 'provider-b', authenticated: true, models: ['shared/model'] }
+] })
+assert.equal(sharedRoutes.length, 2)
+assert.equal(new Set(sharedRoutes.map(route => route.id)).size, 2)
+for (const route of sharedRoutes) {
+  assert.match(route.id, /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/)
+}
 assert.deepEqual(
   JSON.parse(JSON.stringify(settingsFromPluginRows({ plugins: [{
     key: 'jev', settings_schema: [

@@ -357,6 +357,26 @@ class RoutingTests(unittest.TestCase):
         )
         self.assertEqual(len({item['id'] for item in candidates}), 2)
 
+    def test_same_model_id_from_two_providers_remains_distinct(self):
+        from hermes_jev.discovery import candidates_from_inventory
+        from hermes_jev.routing import validate_candidates
+
+        profiles = [
+            {'id': 'provider-a-model', 'provider': 'provider-a', 'model': 'shared-model', 'description': 'First endpoint'},
+            {'id': 'provider-b-model', 'provider': 'provider-b', 'model': 'shared-model', 'description': 'Second endpoint'},
+        ]
+        self.assertEqual(len(validate_candidates(profiles)), 2)
+        with self.assertRaises(ValueError):
+            validate_candidates([profiles[0], {**profiles[1], 'provider': 'provider-a'}])
+        inventory = {'provider': 'provider-a', 'model': 'shared-model', 'providers': [
+            {'slug': 'provider-a', 'authenticated': True, 'models': ['shared-model']},
+            {'slug': 'provider-b', 'authenticated': True, 'models': ['shared-model']},
+        ]}
+        self.assertEqual(
+            {(item['provider'], item['model']) for item in candidates_from_inventory(inventory)},
+            {('provider-a', 'shared-model'), ('provider-b', 'shared-model')},
+        )
+
     def test_turn_plan_can_choose_another_configured_provider(self):
         from hermes_jev.service import Service
         ctx = Context()
