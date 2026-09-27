@@ -39,7 +39,7 @@ await module.link(specifier => {
 })
 await module.evaluate()
 
-const { catalogRoutes, settingsFromPluginRows } = module.namespace
+const { catalogRoutes, settingsFromPluginRows, settingsValues } = module.namespace
 assert.deepEqual(
   Array.from(catalogRoutes({ providers: [
     { slug: 'provider-a', authenticated: true, models: ['model-a', 'model-b'] },
@@ -61,6 +61,7 @@ assert.deepEqual(
     minConfidence: 0.7
   }
 )
+assert.equal(settingsValues(true, [], '').route_min_confidence, 0)
 const contributions = []
 module.namespace.default.register({ registerMany: rows => contributions.push(...rows) })
 assert.ok(contributions.some(item => item.area === 'routes' && item.data.path === '/jev'))
