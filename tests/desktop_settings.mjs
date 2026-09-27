@@ -56,6 +56,11 @@ assert.equal(new Set(sharedRoutes.map(route => route.id)).size, 2)
 for (const route of sharedRoutes) {
   assert.match(route.id, /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/)
 }
+const oddRoutes = catalogRoutes({ providers: [
+  { slug: '@provider', authenticated: true, models: ['shared/model', 'shared/model'] }
+] })
+assert.equal(oddRoutes.length, 1)
+assert.match(oddRoutes[0].id, /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/)
 assert.deepEqual(
   JSON.parse(JSON.stringify(settingsFromPluginRows({ plugins: [{
     key: 'jev', settings_schema: [
