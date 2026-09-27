@@ -107,6 +107,47 @@ class RoutingTests(unittest.TestCase):
         plugin_root._clear_model_route(ctx, session_id='session-1')
         self.assertIsNone(middleware({'model': 'old-model'}, session_id='session-1', provider='openai-codex'))
 
+    def test_explicit_route_does_not_apply_model_from_another_provider(self):
+        from hermes_jev.service import Service
+        ctx = Context()
+        ctx.settings['connection'] = {'backend': 'typesafe'}
+        candidates = [
+            {'id': 'fast', 'model': 'fast-model', 'description': 'Fast', 'provider': 'provider-a'},
+            {'id': 'deep', 'model': 'deep-model', 'description': 'Deep', 'provider': 'provider-a'},
+        ]
+        service = Service(ctx, evaluator=lambda **kwargs: {
+            'model': 'fixture', 'answers': {'model': {'choice': 'deep', 'confidence': 0.99}},
+        }, secret_reader=lambda name: 'fixture-secret')
+        result = service.route({
+            'task': 'debug', 'candidates': candidates,
+            '_runtime': {'session_id': 'session-1', 'provider': 'provider-b'},
+        })
+        self.assertTrue(result['ok'])
+        self.assertFalse(result['model_control']['applied'])
+        self.assertEqual(result['model_control']['reason'], 'provider_mismatch_no_switch')
+        self.assertEqual(ctx.state.get('active_route', {}), {})
+
+    def test_passive_route_skips_candidates_from_another_provider(self):
+        from hermes_jev.service import Service
+        ctx = Context()
+        ctx.settings['connection'] = {'backend': 'typesafe'}
+        ctx.set_config('model_route_enabled', True)
+        ctx.set_config('model_routes', [
+            {'id': 'fast', 'model': 'fast-model', 'description': 'Fast', 'provider': 'provider-a'},
+            {'id': 'deep', 'model': 'deep-model', 'description': 'Deep', 'provider': 'provider-a'},
+        ])
+        evaluated = []
+        service = Service(ctx, evaluator=lambda **kwargs: evaluated.append(kwargs) or {
+            'model': 'fixture', 'answers': {'model': {'choice': 'deep', 'confidence': 0.99}},
+        }, secret_reader=lambda name: 'fixture-secret')
+        result = service.auto_route_turn('debug', {
+            'session_id': 'session-2', 'turn_id': 'turn-2', 'provider': 'provider-b',
+            'model': 'current-model',
+        })
+        self.assertEqual(result['error'], 'insufficient_candidates')
+        self.assertFalse(evaluated)
+        self.assertEqual(ctx.state.get('active_route', {}), {})
+
     def test_passive_pending_route_runs_on_llm_request_thread(self):
         import importlib.util
         spec = importlib.util.spec_from_file_location('jev_plugin_root_passive', ROOT / '__init__.py')
