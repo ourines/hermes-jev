@@ -30,7 +30,7 @@ def validate_candidates(raw):
     if not isinstance(raw, list) or not 2 <= len(raw) <= MAX_CANDIDATES:
         raise ValueError(f"candidates must contain 2..{MAX_CANDIDATES} model profiles")
     normalized = []
-    seen_ids, seen_models = set(), set()
+    seen_ids, seen_models = set(), {}
     for candidate in raw:
         if not isinstance(candidate, dict):
             raise ValueError("each model candidate must be an object")
@@ -43,10 +43,15 @@ def validate_candidates(raw):
             raise ValueError("candidate model must be a nonblank model identifier")
         if not _text(description, max_chars=MAX_DESCRIPTION_CHARS):
             raise ValueError("candidate description must be nonblank and bounded")
-        if route_id in seen_ids or model in seen_models:
-            raise ValueError("candidate ids and model identifiers must be unique")
+        provider = candidate.get("provider")
+        provider_id = provider.strip() if isinstance(provider, str) else ""
+        prior_providers = seen_models.get(model, set())
+        if route_id in seen_ids or (prior_providers and (
+            not provider_id or "" in prior_providers or provider_id in prior_providers
+        )):
+            raise ValueError("candidate ids and provider/model pairs must be unique")
         seen_ids.add(route_id)
-        seen_models.add(model)
+        seen_models.setdefault(model, set()).add(provider_id)
         item = {"id": route_id, "model": model, "description": description.strip()}
         for key in ("provider", "cost_tier", "speed_tier"):
             value = candidate.get(key)

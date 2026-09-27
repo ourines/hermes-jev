@@ -7,13 +7,29 @@ const pairKey = route => `${route.provider}\u0000${route.model}`
 export function catalogRoutes(payload) {
   const providers = Array.isArray(payload?.providers) ? payload.providers : []
   const routes = []
+  const usedIds = new Set()
+  const usedPairs = new Set()
   for (const provider of providers) {
     if (provider?.authenticated !== true || !provider.slug) continue
     for (const item of provider.models || []) {
       const model = typeof item === 'string' ? item : item?.id
       if (typeof model !== 'string' || !model.trim()) continue
+      const pair = `${provider.slug}\u0000${model}`
+      if (usedPairs.has(pair)) continue
+      usedPairs.add(pair)
+      const stem = `${provider.slug}-${model}`
+        .replace(/[^a-zA-Z0-9._-]/g, '-')
+        .replace(/^[^a-zA-Z0-9]+/, '')
+        .slice(0, 64) || 'model'
+      let id = stem
+      let suffix = 1
+      while (usedIds.has(id)) {
+        const tail = `-${suffix++}`
+        id = `${stem.slice(0, 64 - tail.length)}${tail}`
+      }
+      usedIds.add(id)
       routes.push({
-        id: `${provider.slug}:${model}`,
+        id,
         provider: provider.slug,
         model,
         description: `${provider.name || provider.slug} · ${model}`
