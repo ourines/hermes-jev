@@ -92,6 +92,41 @@ class RegistrationTests(unittest.TestCase):
         self.assertEqual(route.call_args.args[0], 'sort records')
         self.assertEqual(route.call_args.args[1]['provider'], 'provider-a')
 
+    def test_legacy_host_does_not_register_unsupported_hook(self):
+        import types
+        from unittest.mock import patch
+
+        manifest = (ROOT / 'plugin.yaml').read_text()
+        self.assertNotIn('  - pre_model_route', manifest)
+        package = types.ModuleType('hermes_cli')
+        package.__path__ = []
+        plugins = types.ModuleType('hermes_cli.plugins')
+        plugins.VALID_HOOKS = {'pre_llm_call', 'post_llm_call'}
+        spec = importlib.util.spec_from_file_location(
+            'jev_plugin_legacy_test', ROOT / '__init__.py',
+            submodule_search_locations=[str(ROOT)],
+        )
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+
+        class Ctx:
+            def __init__(self):
+                self.hooks = {}
+                self.state = type('State', (), {'get': lambda *_: {}, 'set': lambda *_: None})()
+            def get_config(self, key, default=None): return default
+            def register_tool(self, **kwargs): pass
+            def register_cli_command(self, **kwargs): pass
+            def register_skill(self, *args): pass
+            def register_hook(self, name, callback): self.hooks[name] = callback
+            def register_middleware(self, name, callback): pass
+
+        ctx = Ctx()
+        with patch.dict(sys.modules, {'hermes_cli': package, 'hermes_cli.plugins': plugins}):
+            module.register(ctx)
+        self.assertNotIn('pre_model_route', ctx.hooks)
+        self.assertIn('pre_llm_call', ctx.hooks)
+
 
 if __name__ == '__main__':
     unittest.main()
