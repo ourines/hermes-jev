@@ -1,6 +1,6 @@
 name: jev
-version: 0.1.6
-description: Explicit Jev decisions via TypeSafe, Cloudflare or OpenRouter, with a shared agent tool and CLI.
+version: 0.2.0
+description: Jev decisions and model routing for configured Hermes providers.
 manifest_version: 1
 license: MIT
 author: Ourines
@@ -29,7 +29,7 @@ config_schema:
   model_routes:
     type: list
     default: []
-    description: Optional non-secret model profiles used by jev_route; empty means discover the current Hermes provider catalog.
+    description: Optional non-secret model profiles; empty means discover configured authenticated providers.
   route_min_confidence:
     type: float
     description: Optional threshold for model routing; unset accepts a Jev choice but never authorizes execution.

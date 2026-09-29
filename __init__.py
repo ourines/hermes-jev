@@ -162,11 +162,29 @@ def register(ctx):
             ensure_ascii=False),
     )
 
+    native_turn_route = False
+    try:
+        from hermes_cli.plugins import VALID_HOOKS
+    except ImportError:
+        VALID_HOOKS = None  # Standalone plugin tests and non-Hermes hosts.
+    if hasattr(ctx, 'register_hook') and (VALID_HOOKS is None or 'pre_model_route' in VALID_HOOKS):
+        def on_pre_model_route(**kwargs):
+            return service.plan_turn_route(_task_text(kwargs.get('user_message')), {
+                key: kwargs.get(key) for key in ('session_id', 'turn_id', 'provider', 'model')
+            })
+        try:
+            ctx.register_hook('pre_model_route', on_pre_model_route)
+            native_turn_route = True
+        except (ValueError, KeyError):
+            pass  # Older Hermes versions support request-scoped routing only.
+
     if hasattr(ctx, 'register_middleware'):
-        ctx.register_middleware('llm_request', _model_route_middleware(ctx, service))
+        ctx.register_middleware(
+            'llm_request', _model_route_middleware(ctx, None if native_turn_route else service),
+        )
     if hasattr(ctx, 'register_hook'):
         def on_pre_llm_call(**kwargs):
-            if not service.auto_route_enabled():
+            if native_turn_route or not service.auto_route_enabled():
                 return None
             task = _task_text(kwargs.get('user_message'))
             session_id = kwargs.get('session_id')

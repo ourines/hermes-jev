@@ -106,6 +106,48 @@ def candidates_from_models(models, *, provider='', current_model='', limit=MAX_D
         return []
     return validate_candidates(raw)
 
+def candidates_from_inventory(inventory, *, limit=MAX_DISCOVERED):
+    """Build bounded route profiles from authenticated Hermes model options."""
+    if not isinstance(inventory, dict):
+        return []
+    providers = inventory.get('providers')
+    if not isinstance(providers, list):
+        return []
+    current_provider = inventory.get('provider') or ''
+    current_model = inventory.get('model') or ''
+    seen_pairs = set()
+    used_ids = set()
+    ranked = []
+    for row in providers:
+        if not isinstance(row, dict) or row.get('authenticated') is not True:
+            continue
+        provider = row.get('slug')
+        models = row.get('models')
+        if not isinstance(provider, str) or not provider or not isinstance(models, list):
+            continue
+        provider_models = []
+        for entry in models:
+            model = entry if isinstance(entry, str) else entry.get('id') if isinstance(entry, dict) else None
+            if not isinstance(model, str) or _skip_model(model):
+                continue
+            model = model.strip()
+            pair = (provider, model)
+            if pair in seen_pairs:
+                continue
+            seen_pairs.add(pair)
+            provider_models.append(model)
+        provider_models.sort(key=lambda model: (_rank(model, current_model) if provider == current_provider else _rank(model, ''), model))
+        for model in provider_models[:4]:
+            ranked.append((provider, model))
+    ranked.sort(key=lambda pair: (0 if pair == (current_provider, current_model) else 1, pair[0], _rank(pair[1], current_model if pair[0] == current_provider else ''), pair[1]))
+    candidates = [{
+        'id': _route_id(f'{provider}-{model}', used_ids),
+        'model': model,
+        'provider': provider,
+        'description': describe_model(model),
+    } for provider, model in ranked[:max(2, min(int(limit or MAX_DISCOVERED), MAX_CANDIDATES))]]
+    return validate_candidates(candidates) if len(candidates) >= 2 else []
+
 
 def read_hermes_runtime(provider=None):
     """Read non-secret current provider/model and cached catalog. Fail closed to empty."""
@@ -127,3 +169,14 @@ def read_hermes_runtime(provider=None):
     except Exception:
         return runtime
     return runtime
+
+def read_hermes_inventory():
+    """Read the active profile's authenticated model picker inventory without a live probe."""
+    try:
+        from hermes_cli.inventory import build_model_options_payload, load_picker_context
+        return build_model_options_payload(
+            load_picker_context(), explicit_only=True, include_unconfigured=False,
+            refresh=False,
+        )
+    except Exception:
+        return {}

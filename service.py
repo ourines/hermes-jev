@@ -1,7 +1,7 @@
 """Hermes-facing runtime; resolve settings and secrets on every call."""
 from .presets import assess, questions_for
 from .client import safe_error_details, validate_gateway_id
-from .discovery import candidates_from_models, read_hermes_runtime, truthy
+from .discovery import candidates_from_inventory, candidates_from_models, read_hermes_inventory, read_hermes_runtime, truthy
 from .routing import route_questions, route_result, validate_candidates, validate_min_confidence
 
 SECRET_NAMES = {'typesafe': 'TYPESAFE_API_KEY', 'cloudflare': 'CLOUDFLARE_JEV_API_TOKEN',
@@ -110,16 +110,18 @@ class Service:
                 'execution_authorized': False}
 
     def resolve_candidates(self, raw=None, *, provider='', current_model=''):
-        """Prefer explicit plugin profiles; otherwise discover the current Hermes catalog."""
+        """Prefer explicit plugin profiles; otherwise use the authenticated Hermes inventory."""
         if raw is not None:
             return validate_candidates(raw), 'configured'
         configured = self.ctx.get_config('model_routes', [])
         if configured:
             return validate_candidates(configured), 'configured'
-        runtime = {'provider': provider, 'current_model': current_model, 'models': []}
-        if self.catalog_reader is not None:
-            runtime = self.catalog_reader(provider) or runtime
-        else:
+        runtime = self.catalog_reader(provider) if self.catalog_reader is not None else read_hermes_inventory()
+        if not isinstance(runtime, dict):
+            runtime = {}
+        if isinstance(runtime.get('providers'), list):
+            return candidates_from_inventory(runtime), 'discovered'
+        if not runtime:
             runtime = read_hermes_runtime(provider)
         discovered = candidates_from_models(
             runtime.get('models') or [],
@@ -173,6 +175,35 @@ class Service:
         except Exception:
             return {'ok': False, 'error': 'auto_route_skipped', 'applied': False, 'advisory_only': True,
                     'execution_authorized': False}
+
+    def plan_turn_route(self, task, runtime=None):
+        """Choose a provider/model pair for a host turn-route hook; never mutate a request."""
+        try:
+            if not self.auto_route_enabled():
+                return None
+            if not isinstance(task, str) or not task.strip() or task.lstrip().startswith('/'):
+                return None
+            runtime = runtime if isinstance(runtime, dict) else {}
+            provider = runtime.get('provider') or ''
+            candidates, _source = self.resolve_candidates(
+                provider=provider, current_model=runtime.get('model') or '',
+            )
+            candidates = [
+                {**candidate, 'provider': candidate.get('provider') or provider}
+                for candidate in candidates if candidate.get('provider') or provider
+            ]
+            if len(candidates) < 2:
+                return None
+            result = self.route({
+                'task': task.strip()[:4000], 'candidates': candidates,
+                'apply': False, '_runtime': runtime,
+            })
+            if not result.get('ok') or not result.get('route_accepted'):
+                return None
+            selected = result['route']['candidate']
+            return {'provider': selected['provider'], 'model': selected['model']}
+        except Exception:
+            return None
 
     def _run(self, args):
         if not isinstance(args, dict):

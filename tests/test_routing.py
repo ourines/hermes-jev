@@ -340,6 +340,64 @@ class RoutingTests(unittest.TestCase):
         self.assertIn(result['error'], {'auto_route_skipped', 'routing_failed'})
         self.assertFalse(result.get('applied'))
 
+    def test_inventory_uses_only_authenticated_provider_models(self):
+        from hermes_jev.discovery import candidates_from_inventory
+        inventory = {
+            'provider': 'provider-a', 'model': 'model-a',
+            'providers': [
+                {'slug': 'provider-a', 'authenticated': True, 'models': ['model-a']},
+                {'slug': 'provider-b', 'authenticated': True, 'models': ['model-b']},
+                {'slug': 'provider-c', 'authenticated': False, 'models': ['model-c']},
+            ],
+        }
+        candidates = candidates_from_inventory(inventory)
+        self.assertEqual(
+            {(item['provider'], item['model']) for item in candidates},
+            {('provider-a', 'model-a'), ('provider-b', 'model-b')},
+        )
+        self.assertEqual(len({item['id'] for item in candidates}), 2)
+
+    def test_same_model_id_from_two_providers_remains_distinct(self):
+        from hermes_jev.discovery import candidates_from_inventory
+        from hermes_jev.routing import validate_candidates
+
+        profiles = [
+            {'id': 'provider-a-model', 'provider': 'provider-a', 'model': 'shared-model', 'description': 'First endpoint'},
+            {'id': 'provider-b-model', 'provider': 'provider-b', 'model': 'shared-model', 'description': 'Second endpoint'},
+        ]
+        self.assertEqual(len(validate_candidates(profiles)), 2)
+        with self.assertRaises(ValueError):
+            validate_candidates([profiles[0], {**profiles[1], 'provider': 'provider-a'}])
+        inventory = {'provider': 'provider-a', 'model': 'shared-model', 'providers': [
+            {'slug': 'provider-a', 'authenticated': True, 'models': ['shared-model']},
+            {'slug': 'provider-b', 'authenticated': True, 'models': ['shared-model']},
+        ]}
+        self.assertEqual(
+            {(item['provider'], item['model']) for item in candidates_from_inventory(inventory)},
+            {('provider-a', 'shared-model'), ('provider-b', 'shared-model')},
+        )
+
+    def test_turn_plan_can_choose_another_configured_provider(self):
+        from hermes_jev.service import Service
+        ctx = Context()
+        ctx.settings['connection'] = {'backend': 'typesafe'}
+        ctx.set_config('model_route_enabled', True)
+        ctx.set_config('model_routes', [
+            {'id': 'fast', 'model': 'model-a', 'provider': 'provider-a',
+             'description': 'Quick tasks'},
+            {'id': 'deep', 'model': 'model-b', 'provider': 'provider-b',
+             'description': 'Complex tasks'},
+        ])
+        service = Service(ctx, evaluator=lambda **kwargs: {
+            'model': 'fixture', 'answers': {'model': {'choice': 'deep', 'confidence': 0.95}},
+        }, secret_reader=lambda name: 'fixture-secret')
+        plan = service.plan_turn_route('Complex debugging', {
+            'session_id': 'session-3', 'turn_id': 'turn-3',
+            'provider': 'provider-a', 'model': 'model-a',
+        })
+        self.assertEqual(plan, {'provider': 'provider-b', 'model': 'model-b'})
+        self.assertEqual(ctx.state.get('active_route', {}), {})
+
 
 if __name__ == '__main__':
     unittest.main()

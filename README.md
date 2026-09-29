@@ -93,7 +93,7 @@ Sources: [REST API](https://developers.cloudflare.com/ai-gateway/usage/rest-api/
 Two tools are available:
 
 - **`jev_evaluate`** for bounded classification, choice, yes/no and scoring. Exactly one of `preset` and `questions` is required.
-- **`jev_route`** for selecting one model profile for a task. It asks one finite choice question and returns top-level `selected_model`, `confidence`, and review status. With `model_route_enabled: true`, this happens automatically on each user turn from the current Hermes provider catalog (or configured `model_routes`). An accepted result arms a request-scoped model override for subsequent Hermes provider requests in the current turn. It never switches providers or grants execution approval.
+- **`jev_route`** for selecting one model profile for a task. It asks one finite choice question and returns top-level `selected_model`, `confidence`, and review status. With `model_route_enabled: true`, Jev selects from authenticated models across configured providers (or the selected `model_routes`) at the start of each user turn. A compatible Hermes host validates the provider and model together, then switches its client before building the request. The explicit `jev_route` tool remains request-scoped and does not switch providers. Neither path grants execution approval.
 
 Enable or disable passive routing:
 
@@ -101,6 +101,8 @@ Enable or disable passive routing:
 hermes jev auto-route --enable
 hermes jev routes
 ```
+
+In Hermes Desktop, open **Jev** in the sidebar to choose eligible models and set the routing threshold. Leave every model unchecked to let Jev discover configured models. Automatic cross-provider routing requires a Hermes build with the `pre_model_route` hook; older builds keep the same-provider request override.
 
 Configure reusable non-secret profiles under the plugin setting `model_routes`:
 
@@ -124,7 +126,7 @@ hermes config set plugins.entries.jev.settings.model_routes '[{"id":"fast","mode
 hermes config set plugins.entries.jev.settings.route_min_confidence 0.8
 ```
 
-`route_min_confidence` is an optional threshold. When confidence is missing or below it, `route_needs_review` is true and no model override is armed. Thresholds are not calibrated accuracy guarantees. Routing changes only the outgoing request's `model` field for the current turn; it does not rewrite the persistent Hermes default or change providers. After a gateway turn, run `hermes jev status` and inspect `last_auto_route.applied` and `last_auto_route.effective_model` to see the Jev middleware result. Normal turn and usage log lines show the persistent model, so they cannot confirm the outgoing request model. The status observation does not verify provider acceptance.
+`route_min_confidence` is an optional threshold. When confidence is missing or below it, `route_needs_review` is true and no automatic switch occurs. A value of `0` accepts any valid choice. Thresholds are not calibrated accuracy guarantees. On a compatible Hermes host, automatic routing changes the live turn's provider and model and rebuilds the client; it does not rewrite the saved default. On older hosts, run `hermes jev status` after a gateway turn and inspect `last_auto_route.applied` and `last_auto_route.effective_model` for the same-provider middleware result. The status observation does not verify provider acceptance.
 
 ```json
 {"state":"线上登录白屏，请先排查原因。", "preset":"task_triage"}
