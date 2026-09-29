@@ -45,6 +45,8 @@ A development symlink from that directory to the checkout is also supported on s
 
 ## Interactive setup
 
+Want step-by-step help in Chinese? Copy the [LLM configuration prompt](README.zh-CN.md#复制给-llm-的配置引导); it keeps credentials in your interactive terminal rather than the chat.
+
 ```sh
 hermes jev setup --backend typesafe
 # OR

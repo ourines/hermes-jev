@@ -31,6 +31,19 @@ hermes jev test
 
 配置在交互终端输入，Token 隐藏，不放命令参数，也不发聊天。验证成功后保存，主模型不变。配置和测试会发送少量请求，可能计费。
 
+### 复制给 LLM 的配置引导
+
+将下面整段复制到你使用的 LLM 对话中；密钥只在你自己的交互终端输入，不要粘贴到对话里：
+
+```text
+请用中文一步一步引导我在当前 Hermes Profile 中安装并初始化 hermes-jev 插件。我会在自己的交互终端执行命令；每次只给我一步，说明预期结果、如何确认成功，以及失败时如何安全排查，等我反馈非敏感结果后再继续。先核对本仓库 README 的实际命令和当前 Hermes 的插件命令帮助，不要猜测命令、配置键或文件路径，也不要擅自改动我的主模型、开启自动路由或重启正在工作的后端。
+
+1. 先确认我已安装 Hermes、当前使用哪个 Profile，以及 Jev 插件是否已安装/启用。询问我选 TypeSafe 官方、Cloudflare 还是 OpenRouter 后端；不要默认复用 Hermes 主模型的 API Key。若未安装，按 README 的公开安装或本地检出流程引导我安装并启用；用插件列表、doctor 及 `hermes jev --help` 确认插件已加载。若公开安装源尚不可用，说明原因并使用 README 中的本地流程，不要编造替代地址。
+2. 帮我核对所选后端的前提和独立凭据名称（TypeSafe: TYPESAFE_API_KEY；Cloudflare: CLOUDFLARE_JEV_API_TOKEN，另需 Account ID；OpenRouter: OPENROUTER_JEV_API_TOKEN）。Cloudflare 如使用第三方模型，先检查 AI Gateway 认证与 Unified Billing 前提；不要代我创建网关、充值或改共享网关。确认我接受 setup 的一次可能计费的在线验证后，给出 README 中对应的 `hermes jev setup --backend ...` 命令，让我在交互终端的隐藏输入提示中自行输入密钥。绝不要求我在聊天、命令参数、日志或截图中展示真实 Key，也不要让工具代替我回显、读取或提交密钥；不要手工修改 Hermes 的凭据文件。
+3. 让我只反馈去敏的 setup 结果。成功时检查 `ok`、`credential_saved`、`connection_verified` 为 true；再运行 `hermes jev status`，确认 `configured`、`credential_present` 和 backend 与预期一致。解释 status 只检查本地存在性，`online_verified: false` 不表示鉴权失败；setup 验证失败时不得声称凭据已保存。
+4. 询问我是否愿意额外支付一次请求做在线烟测；同意后才运行 `hermes jev test`，确认 `ok`、`online_verified` 及 `semantic_checks`，并明确这不是业务准确率测试。用 `hermes jev guide` 免费查看用法。最后检查当前 Agent 的实际工具目录是否有 `jev_evaluate` 和 `jev_route`；CLI 可用不等于桌面/现有会话已加载原生工具。不可见时按 README 的 CLI fallback 引导，不要未经我批准重启后端。逐项告诉我哪些已验证、哪些还没验证。
+```
+
 **安装成功不等于桌面会话已收到工具。** 确认实际工具目录中有 `jev_evaluate` 和 `jev_route` 才视为原生入口就绪；新开对话不保证长驻后端刷新插件。工具不可见时，Agent 可直接通过 `hermes jev evaluate --file request.json` 或 `hermes jev route --file route.json` 调用，无需用户自己写命令，也无需重新配置 Token。不要为了加载工具擅自重启正在执行任务的后端。
 
 ### 让 Agent 一开始就知道 Jev
