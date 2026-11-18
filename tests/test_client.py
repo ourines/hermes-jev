@@ -81,6 +81,22 @@ class ClientTests(unittest.TestCase):
         self.assertEqual(payload['model'], 'typesafe/jev-1.13-20260917')
         self.assertNotIn('input', payload)
 
+    def test_opencode_system_one_endpoint_and_model_selection(self):
+        seen = []
+        def handler(request):
+            seen.append(request)
+            return httpx.Response(200, json=RESPONSE)
+        with self.transport(handler):
+            result = self.evaluate(backend='opencode')
+            self.evaluate(backend='opencode', model='jev-1.13')
+        self.assertEqual(result['answers'], RESPONSE['answers'])
+        self.assertEqual(result['backend'], 'opencode')
+        self.assertEqual(len(seen), 2)
+        for request, model in zip(seen, ('jev-1.13-free', 'jev-1.13')):
+            self.assertEqual(str(request.url), 'https://opencode.ai/inference/systemone/v1/systemone')
+            self.assertEqual(request.headers['Authorization'], 'Bearer fixture-token')
+            self.assertEqual(json.loads(request.content), {'model': model, 'state': 'Help', 'questions': QUESTIONS})
+
     def test_gateway_routing_and_privacy_headers_are_cloudflare_only(self):
         import client
         for backend, gateway in (("cloudflare", "hermes-jev"), ("cloudflare", "_"), ("cloudflare", None),

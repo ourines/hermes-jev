@@ -107,7 +107,7 @@ class ServiceTests(unittest.TestCase):
         sys.modules.setdefault('hermes_jev', package)
         service = __import__('hermes_jev.service', fromlist=['Service'])
         self.assertEqual(set(service.SECRET_NAMES), set(service.MODELS))
-        self.assertEqual(set(service.MODELS), {'typesafe', 'cloudflare', 'openrouter'})
+        self.assertEqual(set(service.MODELS), {'typesafe', 'cloudflare', 'openrouter', 'opencode'})
         for backend, name in service.SECRET_NAMES.items():
             with self.subTest(backend=backend):
                 self.assertNotEqual(name, 'OPENROUTER_API_KEY')

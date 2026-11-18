@@ -3,7 +3,7 @@
 This is a deliberately bounded text-rubric subset, not a transparent API proxy:
 state is nonblank text or a strict JSON object/array (not top-level null);
 instructions are nonblank text; descriptions are strings, plus Choice nulls.
-Only TypeSafe, Cloudflare's and OpenRouter's fixed HTTPS endpoints are reachable via evaluate.
+Only fixed provider HTTPS endpoints are reachable via evaluate.
 No credential discovery, environment proxies, redirects, or automatic retries.
 """
 from __future__ import annotations
@@ -266,8 +266,8 @@ def evaluate(*, backend: str, token: str, state, questions: dict,
              gateway_id: str | None = None) -> dict:
     """Evaluate once; retain model/answers/usage and append local metadata.
 
-    backend: exactly 'typesafe', 'cloudflare' or 'openrouter'. Cloudflare requires a 32-hex
-    account_id. Defaults: jev-latest, typesafe/jev and typesafe/jev-1.13 respectively
+    backend: 'typesafe', 'cloudflare', 'openrouter' or 'opencode'. Cloudflare requires a 32-hex
+    account_id. Defaults: jev-latest, typesafe/jev, typesafe/jev-1.13 and jev-1.13-free respectively
     (OpenRouter's Decisions API rejects the 'jev-latest' alias, so its default is
     version-pinned). Model override changes only the JSON model identifier, never the
     fixed endpoint.
@@ -287,7 +287,7 @@ def evaluate(*, backend: str, token: str, state, questions: dict,
     diagnostics parse at most 64 KiB; malformed/oversized bodies stay generic.
     """
     started = time.monotonic()
-    if backend not in ("typesafe", "cloudflare", "openrouter"):
+    if backend not in ("typesafe", "cloudflare", "openrouter", "opencode"):
         raise JevError("invalid_backend")
     validate_gateway_id(backend, gateway_id)
     if not isinstance(token, str) or not re.fullmatch(r"[!-~]{1,8192}", token):
@@ -314,6 +314,9 @@ def evaluate(*, backend: str, token: str, state, questions: dict,
         # model id is version-pinned because the endpoint rejects the 'jev-latest' alias.
         url = "https://openrouter.ai/api/alpha/decisions"
         payload = {"model": model or "typesafe/jev-1.13", "state": state, "questions": questions}
+    elif backend == "opencode":
+        url = "https://opencode.ai/inference/systemone/v1/systemone"
+        payload = {"model": model or "jev-1.13-free", "state": state, "questions": questions}
     else:
         url = "https://api.typesafe.ai/v1/systemone"
         payload = {"model": model or "jev-latest", "state": state, "questions": questions}

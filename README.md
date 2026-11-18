@@ -13,10 +13,13 @@ A native **tool plugin**, not a chat-model provider. Jev supplies bounded semant
 | TypeSafe official | `jev-latest` | `TYPESAFE_API_KEY` | `https://api.typesafe.ai/v1/systemone` |
 | Cloudflare AI | `typesafe/jev` | `CLOUDFLARE_JEV_API_TOKEN` + non-secret Account ID | `https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/run` |
 | OpenRouter | `typesafe/jev-1.13` | `OPENROUTER_JEV_API_TOKEN` | `https://openrouter.ai/api/alpha/decisions` |
+| OpenCode Console | `jev-1.13-free` | `OPENCODE_JEV_API_KEY` | `https://opencode.ai/inference/systemone/v1/systemone` |
 
 Select one explicitly. No cross-provider fallback, credential reuse, automatic retries or redirected authenticated requests. Model aliases may change upstream; results preserve the actual model ID returned.
 
 OpenRouter serves the same request/answer contract from an **alpha** endpoint and rejects the `jev-latest` alias (`HTTP 400 Model typesafe/jev-latest does not exist`), so this backend's default pins the versioned model id; `--model` overrides it. Use a dedicated key with its own limits instead of a general-purpose OpenRouter key.
+
+OpenCode uses the [Console System One endpoint](https://opencode.ai/docs/console/models/#jev), not a chat endpoint. Run `hermes jev setup --backend opencode` and enter an OpenCode key from a workspace with Jev access. The default `jev-1.13-free` is a limited-time model; if unavailable, the plugin does not automatically switch to a paid model. To opt into the paid model, pass `--model jev-1.13` with a workspace that has paid access. The plugin does not use your Hermes delegation credential automatically.
 
 ## Installation
 
